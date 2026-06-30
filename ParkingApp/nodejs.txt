@@ -1,0 +1,21 @@
+npm intall -g @nestjs/cli
+nest new vehículos
+- npm 
+dentro de vehículos
+
+entrar en vehículos y ejecutar 
+
+seleccionar npm
+
+
+npm install @nestjs/typeorm typeorm pg uuid @nestjs/config
+
+npm install class-validator class-transformer
+
+npm install @types/uuid --save-dev
+
+
+nest g resource vehículos
+-sale opciones 
+REST API
+	-Y

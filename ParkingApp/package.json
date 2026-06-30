@@ -1,0 +1,23 @@
+{
+  "name": "parking-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo ParkingApp - microservicios NestJS",
+  "workspaces": [
+    "App/ms-vehiculos",
+    "App/ms-tickets"
+  ],
+  "scripts": {
+    "start:vehiculos": "npm run start:dev --workspace=App/ms-vehiculos",
+    "start:tickets": "npm run start:dev --workspace=App/ms-tickets",
+    "build:vehiculos": "npm run build --workspace=App/ms-vehiculos",
+    "build:tickets": "npm run build --workspace=App/ms-tickets",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11"
+  }
+}

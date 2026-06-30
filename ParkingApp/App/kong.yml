@@ -1,0 +1,39 @@
+_format_version: "3.0"
+
+services:
+  - name: ms-usuarios-roles-auth
+    url: http://host.docker.internal:8080
+    routes:
+      - name: usuarios-route
+        paths:
+          - /api/users
+          - /api/auth
+          - /api/oauth
+          - /api/personas
+          - /api/roles
+        strip_path: false
+
+  - name: ms-zonas-espacios
+    url: http://host.docker.internal:8081
+    routes:
+      - name: zonas-route
+        paths:
+          - /api/zonas
+          - /api/espacios
+        strip_path: false
+
+  - name: ms-vehiculos
+    url: http://host.docker.internal:3000
+    routes:
+      - name: vehiculos-route
+        paths:
+          - /vehiculos
+        strip_path: false
+
+  - name: ms-tickets
+    url: http://host.docker.internal:3002
+    routes:
+      - name: tickets-route
+        paths:
+          - /tickets
+        strip_path: false
