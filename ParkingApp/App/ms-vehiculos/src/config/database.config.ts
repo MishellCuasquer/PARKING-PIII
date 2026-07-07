@@ -1,8 +1,8 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { Vehiculo } from 'src/vehiculos/entities/vehiculo.entity';
-import { Auto } from 'src/vehiculos/entities/auto.entity';
-import { Motocicleta } from 'src/vehiculos/entities/motocicleta.entity';
-import { Camioneta } from 'src/vehiculos/entities/camioneta.entity';
+import { Vehiculo } from '../vehiculos/entities/vehiculo.entity';
+import { Auto } from '../vehiculos/entities/auto.entity';
+import { Motocicleta } from '../vehiculos/entities/motocicleta.entity';
+import { Camioneta } from '../vehiculos/entities/camioneta.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',

@@ -1,0 +1,32 @@
+name: Telegram notifications
+
+# Notifica al grupo de Telegram de los desarrolladores el resultado de cada
+# pipeline de CI (build/tests y análisis de SonarCloud). No se activa hasta que
+# existan los secretos TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en el repositorio
+# (Settings > Secrets and variables > Actions). Ver docs/telegram-bot-setup.md.
+on:
+  workflow_run:
+    workflows:
+      - "Java CI (quality gate)"
+      - "Node CI (quality gate)"
+      - "SonarCloud analysis"
+    types: [completed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+    steps:
+      - name: Enviar notificación a Telegram
+        continue-on-error: true
+        uses: appleboy/telegram-action@v1.0.0
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ${{ github.event.workflow_run.conclusion == 'success' && '✅' || '❌' }} ${{ github.event.workflow_run.name }}
+            Repo: ${{ github.repository }}
+            Rama: ${{ github.event.workflow_run.head_branch }}
+            Commit: ${{ github.event.workflow_run.head_sha }}
+            Autor: ${{ github.event.workflow_run.actor.login }}
+            Detalle: ${{ github.event.workflow_run.html_url }}

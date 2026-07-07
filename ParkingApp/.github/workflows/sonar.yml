@@ -1,0 +1,85 @@
+name: SonarCloud analysis
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: "123"
+          POSTGRES_DB: usuarios_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: "123"
+          MYSQL_DATABASE: zonas_espacios
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -uroot -p123"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Test + coverage (Java, genera jacoco.xml)
+        run: mvn -f pom.xml clean verify --batch-mode
+
+      - name: Install dependencies (workspace npm raiz)
+        run: npm ci
+
+      - name: Test + coverage (ms-vehiculos)
+        working-directory: App/ms-vehiculos
+        run: npx jest --coverage
+
+      - name: Test + coverage (ms-tickets)
+        working-directory: App/ms-tickets
+        run: npx jest --coverage
+
+      - name: Install dependencies (ms-audit)
+        working-directory: ms-audit
+        run: npm ci
+
+      - name: Test + coverage (ms-audit)
+        working-directory: ms-audit
+        run: npx jest --coverage
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
