@@ -1,6 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { AuditService } from './audit.service';
-import { UpdateAuditDto } from './dto/update-audit.dto';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { CreateAuditEventDto } from './dto/create-audit-event.dto';
 

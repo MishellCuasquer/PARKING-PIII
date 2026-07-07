@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [App/ms-vehiculos, App/ms-tickets]
+        service: [ParkingApp/App/ms-vehiculos, ParkingApp/App/ms-tickets]
     steps:
       - uses: actions/checkout@v4
 
@@ -21,8 +21,10 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+          cache-dependency-path: ParkingApp/package-lock.json
 
       - name: Install dependencies (workspace root)
+        working-directory: ParkingApp
         run: npm ci
 
       - name: Lint (informativo, no bloquea el build todavia)
@@ -49,21 +51,21 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: ms-audit/package-lock.json
+          cache-dependency-path: ParkingApp/ms-audit/package-lock.json
 
       - name: Install dependencies
-        working-directory: ms-audit
+        working-directory: ParkingApp/ms-audit
         run: npm ci
 
       - name: Lint (informativo, no bloquea el build todavia)
-        working-directory: ms-audit
+        working-directory: ParkingApp/ms-audit
         run: npm run lint
         continue-on-error: true
 
       - name: Build (tsc)
-        working-directory: ms-audit
+        working-directory: ParkingApp/ms-audit
         run: npm run build
 
       - name: Test + coverage
-        working-directory: ms-audit
+        working-directory: ParkingApp/ms-audit
         run: npx jest --coverage

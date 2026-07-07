@@ -13,8 +13,8 @@ export class AuditConsumer implements OnModuleInit {
   private channel: any;
 
   constructor(
-    private configService: ConfigService,
-    private auditService: AuditService,
+    private readonly configService: ConfigService,
+    private readonly auditService: AuditService,
   ) {}
 
   async onModuleInit() {
