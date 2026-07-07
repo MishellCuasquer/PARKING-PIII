@@ -9,7 +9,9 @@ export class CreateAuditEventDto {
         message: 'El servicio debe comenzar con "ms-" segido de letras.'})
         
     servicio!: string;
-    
+    //un nuevo comnetario de prueba
+    //nuevo
+    //action
     @IsString()
     @IsNotEmpty()
     @MinLength(5)
