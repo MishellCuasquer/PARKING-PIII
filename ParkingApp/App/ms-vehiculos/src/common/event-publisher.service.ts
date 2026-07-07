@@ -1,6 +1,5 @@
-import { Injectable ,OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Logger } from '@nestjs/common';
 import * as amqp from 'amqplib';
 
 
@@ -21,10 +20,10 @@ export class EventPublisher implements OnModuleInit, OnModuleDestroy{
 
     private connection:  any;
     private channel: any;
-    private exchangeName: string;
-    private routingKey: string;
+    private readonly exchangeName: string;
+    private readonly routingKey: string;
 
-    constructor(private configService: ConfigService ) {
+    constructor(private readonly configService: ConfigService ) {
         this.exchangeName = this.configService.get<string>('RABBITMQ_EXCHANGE') ?? '';
         this.routingKey = this.configService.get<string>('RABBITMQ_ROUTING_KEY') ?? '';
 

@@ -4,6 +4,10 @@ name: Telegram notifications
 # pipeline de CI (build/tests y análisis de SonarCloud). No se activa hasta que
 # existan los secretos TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en el repositorio
 # (Settings > Secrets and variables > Actions). Ver docs/telegram-bot-setup.md.
+#
+# OJO: los workflows con trigger `workflow_run` solo se ejecutan cuando este
+# archivo existe en la rama por defecto (main). No se disparará desde ramas
+# feature hasta que el PR se mergee a main.
 on:
   workflow_run:
     workflows:
@@ -15,11 +19,15 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+    # El contexto `secrets` no está permitido en el `if` de un job, por eso se
+    # exponen como variables de entorno y el chequeo se hace a nivel de step.
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - name: Enviar notificación a Telegram
-        continue-on-error: true
-        uses: appleboy/telegram-action@v1.0.0
+        if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        uses: appleboy/telegram-action@221e6b684967abe813051ee4a37dd61770a83ad3 # v1.0.1
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}

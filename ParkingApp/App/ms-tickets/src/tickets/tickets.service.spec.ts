@@ -16,7 +16,10 @@ describe('TicketsService', () => {
         TicketsService,
         { provide: getRepositoryToken(Ticket), useValue: {} },
         { provide: HttpClientService, useValue: { get: jest.fn(), put: jest.fn() } },
-        { provide: ConfigService, useValue: { get: jest.fn((_key: string, def?: unknown) => def) } },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((_key: string, def?: string) => def ?? '') },
+        },
         { provide: ServiceTokenService, useValue: { getServiceToken: jest.fn() } },
         { provide: EventPublisher, useValue: { publishEvent: jest.fn() } },
       ],
