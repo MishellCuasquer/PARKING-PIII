@@ -7,7 +7,7 @@ export class Auto extends Vehiculo {
     numeroPuertas!: number;
 
     @Column ()
-    CpacidadMaletero!: number;
+    CapacidadMaletero!: number;
 
     
     obtenerTipo(): string {

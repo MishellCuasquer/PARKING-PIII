@@ -1,5 +1,24 @@
 _format_version: "3.0"
 
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:5173"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Authorization
+        - Content-Type
+      credentials: true
+      max_age: 3600
+
 services:
   - name: ms-usuarios-roles-auth
     url: http://host.docker.internal:8080

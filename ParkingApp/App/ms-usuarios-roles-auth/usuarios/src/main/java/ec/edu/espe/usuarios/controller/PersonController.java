@@ -1,5 +1,6 @@
 package ec.edu.espe.usuarios.controller;
 
+import ec.edu.espe.usuarios.audit.AuditPublisher;
 import ec.edu.espe.usuarios.dto.response.PersonResponse;
 import ec.edu.espe.usuarios.entity.Person;
 import ec.edu.espe.usuarios.repository.PersonRepository;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
 
 
 @RestController
@@ -18,6 +20,7 @@ import java.util.List;
 public class PersonController {
 
     private final PersonRepository personRepository;
+    private final AuditPublisher auditPublisher;
 
     // Buscar persona por DNI
     @GetMapping("/{dni}")
@@ -47,6 +50,14 @@ public class PersonController {
     @PostMapping
     public ResponseEntity<Person> create(@RequestBody Person person) {
         Person nuevaPersona = personRepository.save(person);
+
+        auditPublisher.publish("CREATE", "Persona", Map.of(
+                "id", nuevaPersona.getId(),
+                "dni", nuevaPersona.getDni(),
+                "firstName", nuevaPersona.getFirstName(),
+                "lastName", nuevaPersona.getLastName()
+        ));
+
         return ResponseEntity.status(HttpStatus.CREATED).body(nuevaPersona);
     }
     @GetMapping
