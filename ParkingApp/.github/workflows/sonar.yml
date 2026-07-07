@@ -2,9 +2,16 @@ name: SonarCloud analysis
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - principal
+      - main
+      - master
+
   pull_request:
-    branches: [main, master]
+    branches:
+      - principal
+      - main
+      - master
 
 jobs:
   sonar:
@@ -39,7 +46,8 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -50,23 +58,23 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Set up Node 20
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
 
-      - name: Test + coverage (Java, genera jacoco.xml)
+      - name: Test + Coverage (Java)
         run: mvn -f pom.xml clean verify --batch-mode
 
-      - name: Install dependencies (workspace npm raiz)
+      - name: Install dependencies (Root)
         run: npm ci
 
-      - name: Test + coverage (ms-vehiculos)
+      - name: Test + Coverage (ms-vehiculos)
         working-directory: App/ms-vehiculos
         run: npx jest --coverage
 
-      - name: Test + coverage (ms-tickets)
+      - name: Test + Coverage (ms-tickets)
         working-directory: App/ms-tickets
         run: npx jest --coverage
 
@@ -74,11 +82,11 @@ jobs:
         working-directory: ms-audit
         run: npm ci
 
-      - name: Test + coverage (ms-audit)
+      - name: Test + Coverage (ms-audit)
         working-directory: ms-audit
         run: npx jest --coverage
 
-      - name: SonarCloud scan
+      - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
