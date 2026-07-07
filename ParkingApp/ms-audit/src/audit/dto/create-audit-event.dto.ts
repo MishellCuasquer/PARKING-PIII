@@ -10,6 +10,8 @@ export class CreateAuditEventDto {
         
     servicio!: string;
     //un nuevo comnetario de prueba
+    //nuevo
+    //action
     @IsString()
     @IsNotEmpty()
     @MinLength(5)
