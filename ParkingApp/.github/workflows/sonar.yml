@@ -3,12 +3,14 @@ name: SonarCloud analysis
 on:
   push:
     branches:
+      - development
       - principal
       - main
       - master
 
   pull_request:
     branches:
+      - development
       - principal
       - main
       - master
@@ -71,19 +73,23 @@ jobs:
         run: npm ci
 
       - name: Test + Coverage (ms-vehiculos)
-        working-directory: App/ms-vehiculos
-        run: npx jest --coverage
+        working-directory: ParkingApp/App/ms-vehiculos
+        run: |
+          npm ci
+          npx jest --coverage
 
       - name: Test + Coverage (ms-tickets)
-        working-directory: App/ms-tickets
-        run: npx jest --coverage
+        working-directory: ParkingApp/App/ms-tickets
+        run: |
+          npm ci
+          npx jest --coverage
 
       - name: Install dependencies (ms-audit)
-        working-directory: ms-audit
+        working-directory: ParkingApp/ms-audit
         run: npm ci
 
       - name: Test + Coverage (ms-audit)
-        working-directory: ms-audit
+        working-directory: ParkingApp/ms-audit
         run: npx jest --coverage
 
       - name: SonarCloud Scan
@@ -101,14 +107,16 @@ jobs:
             STATUS="❌ FALLÓ"
           fi
 
-          MESSAGE="🚀 Análisis SonarCloud $STATUS
+          MESSAGE="🚀 Análisis SonarCloud ${STATUS}
 
-          📦 Repositorio: ${{ github.repository }}
-          🌿 Rama: ${{ github.ref_name }}
-          👤 Usuario: ${{ github.actor }}
-          🔗 Commit: ${{ github.sha }}
-          🔗 Acción: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+📦 Repositorio: ${{ github.repository }}
+🌿 Rama: ${{ github.ref_name }}
+👤 Usuario: ${{ github.actor }}
+📝 Commit: ${{ github.sha }}
 
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+🔗 Ver ejecución:
+https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             --data-urlencode text="$MESSAGE"
