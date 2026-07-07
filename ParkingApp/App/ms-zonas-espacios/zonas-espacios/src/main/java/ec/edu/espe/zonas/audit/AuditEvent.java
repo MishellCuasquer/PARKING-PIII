@@ -2,6 +2,7 @@ package ec.edu.espe.zonas.audit;
 
 import java.util.Map;
 
+//NUEVO CAMBIO
 public record AuditEvent(
         String servicio,
         String accion,

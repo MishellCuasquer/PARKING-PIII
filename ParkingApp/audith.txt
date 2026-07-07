@@ -1,0 +1,6 @@
+-) nest new ms-audit
+-) npm install @nestjs/typeorm pg uuid @nestjs/config @nestjs/microservices amqplib amqp-connection-manager @nestjs/throttler class-validator class-transformer
+
+
+-) npm install @types/uuid @types/amqplib --save-dev
+
