@@ -8,9 +8,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.Map;
 
@@ -52,6 +55,49 @@ class AuditPublisherTest {
         doThrow(new RuntimeException("broker caido"))
                 .when(rabbitTemplate)
                 .convertAndSend(eq("exchange_audit"), eq("routing_audit"), any(AuditEvent.class));
+
+        auditPublisher.publish("CREATE", "Zona", Map.of("id", "1"));
+
+        verify(rabbitTemplate).convertAndSend(eq("exchange_audit"), eq("routing_audit"), any(AuditEvent.class));
+    }
+
+    @Test
+    void publish_usaElNombreDelUsuarioAutenticado() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("jperez", "pass"));
+
+        auditPublisher.publish("UPDATE", "Zona", Map.of("id", "1"));
+
+        verify(rabbitTemplate).convertAndSend(eq("exchange_audit"), eq("routing_audit"), any(AuditEvent.class));
+    }
+
+    @Test
+    void publish_tomaLaIpDeXForwardedForCuandoEstaPresente() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-Forwarded-For", "200.1.1.1, 10.0.0.2");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        auditPublisher.publish("CREATE", "Zona", Map.of("id", "1"));
+
+        verify(rabbitTemplate).convertAndSend(eq("exchange_audit"), eq("routing_audit"), any(AuditEvent.class));
+    }
+
+    @Test
+    void publish_tomaLaIpDeXRealIpCuandoNoHayXForwardedFor() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-Real-IP", "200.2.2.2");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        auditPublisher.publish("CREATE", "Zona", Map.of("id", "1"));
+
+        verify(rabbitTemplate).convertAndSend(eq("exchange_audit"), eq("routing_audit"), any(AuditEvent.class));
+    }
+
+    @Test
+    void publish_usaLaIpRemotaCuandoNoHayCabecerasDeProxy() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("10.0.0.9");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
         auditPublisher.publish("CREATE", "Zona", Map.of("id", "1"));
 

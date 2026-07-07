@@ -3,6 +3,7 @@ package ec.edu.espe.usuarios.service.impl;
 import ec.edu.espe.usuarios.audit.AuditPublisher;
 import ec.edu.espe.usuarios.config.JwtConfig;
 import ec.edu.espe.usuarios.dto.request.LoginRequest;
+import ec.edu.espe.usuarios.dto.request.OAuthTokenRequest;
 import ec.edu.espe.usuarios.entity.Role;
 import ec.edu.espe.usuarios.entity.User;
 import ec.edu.espe.usuarios.repository.UserRepository;
@@ -75,6 +76,34 @@ class AuthServiceImplTest {
         when(userRepository.findByUsername("fantasma")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void oauthToken_generaTokenParaGrantTypePassword() {
+        Role role = Role.builder().name("CLIENT").build();
+        User user = User.builder().id(UUID.randomUUID()).username("jperez").role(role).build();
+        OAuthTokenRequest request = new OAuthTokenRequest();
+        request.setGrantType("password");
+        request.setUsername("jperez");
+        request.setPassword("secret");
+
+        when(userRepository.findByUsername("jperez")).thenReturn(Optional.of(user));
+        when(jwtConfig.generateToken(eq("jperez"), anyString(), any())).thenReturn("token-oauth");
+        when(jwtConfig.getExpirationTime()).thenReturn(3600000L);
+
+        var response = authService.oauthToken(request);
+
+        assertThat(response.getAccessToken()).isEqualTo("token-oauth");
+        assertThat(response.getUsername()).isEqualTo("jperez");
+    }
+
+    @Test
+    void oauthToken_lanzaBadCredentialsSiElGrantTypeNoEsSoportado() {
+        OAuthTokenRequest request = new OAuthTokenRequest();
+        request.setGrantType("client_credentials");
+
+        assertThatThrownBy(() -> authService.oauthToken(request))
                 .isInstanceOf(BadCredentialsException.class);
     }
 

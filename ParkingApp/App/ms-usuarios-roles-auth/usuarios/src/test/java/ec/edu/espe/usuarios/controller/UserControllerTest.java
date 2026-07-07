@@ -1,6 +1,7 @@
 package ec.edu.espe.usuarios.controller;
 
 import ec.edu.espe.usuarios.dto.request.UserCreateRequest;
+import ec.edu.espe.usuarios.dto.request.UserUpdateRequest;
 import ec.edu.espe.usuarios.dto.response.UserResponse;
 import ec.edu.espe.usuarios.services.UserService;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -59,5 +61,17 @@ class UserControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().getUsername()).isEqualTo("jperez");
+    }
+
+    @Test
+    void updateUser_delegaEnElServicioYDevuelveElUsuarioActualizado() {
+        UUID userId = UUID.randomUUID();
+        UserResponse actualizado = UserResponse.builder().username("jperez2").build();
+        when(userService.updateUser(eq(userId), any())).thenReturn(actualizado);
+
+        ResponseEntity<UserResponse> response = userController.updateUser(userId, new UserUpdateRequest());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getUsername()).isEqualTo("jperez2");
     }
 }

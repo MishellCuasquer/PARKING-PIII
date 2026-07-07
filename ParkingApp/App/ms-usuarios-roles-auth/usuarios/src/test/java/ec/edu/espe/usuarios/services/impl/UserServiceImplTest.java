@@ -96,6 +96,36 @@ class UserServiceImplTest {
     }
 
     @Test
+    void createUser_generaUsernameConMiddleNameApellidoCompuestoYResuelveColision() {
+        UserCreateRequest request = new UserCreateRequest();
+        request.setDni("2222222222");
+        request.setFirstName("Juan");
+        request.setMiddleName("Carlos");
+        request.setLastName("Perez Ruiz");
+        request.setEmail("juan2@test.com");
+        request.setPhone("0988888888");
+
+        when(personRepository.existsByEmail(request.getEmail())).thenReturn(false);
+        when(personRepository.existsByDni(request.getDni())).thenReturn(false);
+        when(personRepository.save(any(Person.class))).thenReturn(person);
+        when(roleRepository.findByName("CLIENT")).thenReturn(Optional.of(clientRole));
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed");
+        // Primer username generado ya existe; el segundo (con contador) esta libre.
+        // La comparacion de colision usa el username antes de aplicar toLowerCase().
+        when(userRepository.findByUsername("JCPerezR")).thenReturn(Optional.of(user));
+        when(userRepository.findByUsername("JCPerezR1")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User u = invocation.getArgument(0);
+            return User.builder().id(person.getId()).person(person).username(u.getUsername())
+                    .active(true).role(clientRole).build();
+        });
+
+        UserResponse response = userService.createUser(request);
+
+        assertThat(response.getUsername()).isEqualTo("jcperezr1");
+    }
+
+    @Test
     void createUser_lanzaExcepcionSiElEmailYaExiste() {
         UserCreateRequest request = new UserCreateRequest();
         request.setEmail("juan@test.com");
