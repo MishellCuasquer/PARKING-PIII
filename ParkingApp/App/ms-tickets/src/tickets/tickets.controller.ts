@@ -118,13 +118,7 @@ export class TicketsController {
     @Request() req: any,
     @Headers('authorization') authorization?: string,
   ) {
-    return this.ticketsService.cerrarTicket(
-      id,
-      updateTicketDto,
-      authorization,
-      req.user?.userId,
-      this.clientIp(req),
-    );
+    return this.cerrarTicket(id, updateTicketDto, req, authorization);
   }
 
   @Delete(':id')

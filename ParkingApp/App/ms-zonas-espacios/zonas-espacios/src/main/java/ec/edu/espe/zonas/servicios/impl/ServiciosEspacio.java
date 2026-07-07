@@ -23,6 +23,8 @@ import java.util.ArrayList;
 @Service
 public class ServiciosEspacio implements EspacioServicio {
 
+    private static final String ENTIDAD_ESPACIO = "Espacio";
+
     @Autowired
     private EspacioRepositorio espacioRepositorio;
 
@@ -80,7 +82,7 @@ public class ServiciosEspacio implements EspacioServicio {
 
         Espacio espacioGuardado = espacioRepositorio.save(nuevoEspacio);
 
-        auditPublisher.publish("CREATE", "Espacio", Map.of(
+        auditPublisher.publish("CREATE", ENTIDAD_ESPACIO, Map.of(
                 "id", espacioGuardado.getId(),
                 "nombre", espacioGuardado.getNombre()
         ));
@@ -112,7 +114,7 @@ public class ServiciosEspacio implements EspacioServicio {
 
         espacioRepositorio.delete(espacio);
 
-        auditPublisher.publish("DELETE", "Espacio", Map.of(
+        auditPublisher.publish("DELETE", ENTIDAD_ESPACIO, Map.of(
                 "id", uuid,
                 "nombre", espacio.getNombre()
         ));
@@ -140,7 +142,7 @@ public class ServiciosEspacio implements EspacioServicio {
         actualizarEstadoEspacio(espacio, estado);
         Espacio espacioActualizado = espacioRepositorio.save(espacio);
 
-        auditPublisher.publish("UPDATE", "Espacio", Map.of(
+        auditPublisher.publish("UPDATE", ENTIDAD_ESPACIO, Map.of(
                 "id", espacioActualizado.getId(),
                 "estado", espacioActualizado.getEstado().name()
         ));
@@ -164,7 +166,7 @@ public class ServiciosEspacio implements EspacioServicio {
         actualizarEstadoEspacio(espacio, EstadoEspacio.RESERVADO);
         Espacio espacioReservado = espacioRepositorio.save(espacio);
 
-        auditPublisher.publish("UPDATE", "Espacio", Map.of(
+        auditPublisher.publish("UPDATE", ENTIDAD_ESPACIO, Map.of(
                 "id", espacioReservado.getId(),
                 "estado", espacioReservado.getEstado().name()
         ));

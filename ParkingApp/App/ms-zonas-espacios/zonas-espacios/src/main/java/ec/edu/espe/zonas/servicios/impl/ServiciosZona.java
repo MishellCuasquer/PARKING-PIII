@@ -25,6 +25,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ServiciosZona implements ZonaServicio {
+    private static final String CAMPO_NOMBRE = "nombre";
+
     private final MapperUtils mapper;
 
     private final ZonaRepositorio zonaRepositorio;
@@ -105,7 +107,7 @@ public class ServiciosZona implements ZonaServicio {
 
         auditPublisher.publish("CREATE", "Zona", Map.of(
                 "id", zonaSaved.getId(),
-                "nombre", zonaSaved.getNombre()
+                CAMPO_NOMBRE, zonaSaved.getNombre()
         ));
 
         return dto;
@@ -132,7 +134,7 @@ public class ServiciosZona implements ZonaServicio {
 
         auditPublisher.publish("UPDATE", "Zona", Map.of(
                 "id", zonaActualizada.getId(),
-                "nombre", zonaActualizada.getNombre()
+                CAMPO_NOMBRE, zonaActualizada.getNombre()
         ));
 
         return mapper.toZonaResponseDto(zonaActualizada);
@@ -160,7 +162,7 @@ public class ServiciosZona implements ZonaServicio {
 
         auditPublisher.publish("DELETE", "Zona", Map.of(
                 "id", id,
-                "nombre", zona.getNombre()
+                CAMPO_NOMBRE, zona.getNombre()
         ));
     }
 

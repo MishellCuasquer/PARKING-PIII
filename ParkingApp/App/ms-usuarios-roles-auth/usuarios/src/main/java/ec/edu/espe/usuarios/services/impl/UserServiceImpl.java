@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    private static final String CAMPO_USERNAME = "username";
+
     private final UserRepository userRepository;
     private final PersonRepository personRepository;
     private final RoleRepository roleRepository;
@@ -76,7 +78,7 @@ public class UserServiceImpl implements UserService {
 
         auditPublisher.publish("CREATE", "User", Map.of(
                 "id", savedUser.getId(),
-                "username", savedUser.getUsername()
+                CAMPO_USERNAME, savedUser.getUsername()
         ));
 
         return mapToUserResponse(savedUser);
@@ -122,7 +124,7 @@ public class UserServiceImpl implements UserService {
 
         auditPublisher.publish("UPDATE", "User", Map.of(
                 "id", user.getId(),
-                "username", user.getUsername(),
+                CAMPO_USERNAME, user.getUsername(),
                 "role", role.getName()
         ));
 
@@ -165,7 +167,7 @@ public class UserServiceImpl implements UserService {
 
         auditPublisher.publish("UPDATE", "User", Map.of(
                 "id", user.getId(),
-                "username", user.getUsername()
+                CAMPO_USERNAME, user.getUsername()
         ));
 
         return mapToUserResponse(user);

@@ -14,6 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
 
+    private static final String USERNAME_ADMIN = "admin";
+    private static final String USERNAME_OPERADOR = "operador";
+    private static final String USERNAME_SERVICE = "service";
+
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
     private final PersonRepository personRepository;
@@ -27,7 +31,7 @@ public class DataInitializer implements CommandLineRunner {
         Role clientRole = ensureRole("CLIENT", "Cliente del parqueadero");
         Role serviceRole = ensureRole("SERVICE", "Cuenta de servicio entre microservicios");
 
-        if (!userRepository.existsByUsername("admin")) {
+        if (!userRepository.existsByUsername(USERNAME_ADMIN)) {
             Person person = Person.builder()
                     .dni("0000000000")
                     .firstName("Admin")
@@ -40,7 +44,7 @@ public class DataInitializer implements CommandLineRunner {
 
             User admin = User.builder()
                     .person(person)
-                    .username("admin")
+                    .username(USERNAME_ADMIN)
                     .passwordHash(passwordEncoder.encode("admin123"))
                     .active(true)
                     .role(adminRole)
@@ -48,7 +52,7 @@ public class DataInitializer implements CommandLineRunner {
             userRepository.save(admin);
         }
 
-        if (!userRepository.existsByUsername("operador")) {
+        if (!userRepository.existsByUsername(USERNAME_OPERADOR)) {
             Person operatorPerson = Person.builder()
                     .dni("2222222222")
                     .firstName("Operador")
@@ -61,7 +65,7 @@ public class DataInitializer implements CommandLineRunner {
 
             User operatorUser = User.builder()
                     .person(operatorPerson)
-                    .username("operador")
+                    .username(USERNAME_OPERADOR)
                     .passwordHash(passwordEncoder.encode("operador123"))
                     .active(true)
                     .role(operatorRole)
@@ -69,7 +73,7 @@ public class DataInitializer implements CommandLineRunner {
             userRepository.save(operatorUser);
         }
 
-        if (!userRepository.existsByUsername("service")) {
+        if (!userRepository.existsByUsername(USERNAME_SERVICE)) {
             Person servicePerson = Person.builder()
                     .dni("9999999999")
                     .firstName("Service")
@@ -82,7 +86,7 @@ public class DataInitializer implements CommandLineRunner {
 
             User serviceUser = User.builder()
                     .person(servicePerson)
-                    .username("service")
+                    .username(USERNAME_SERVICE)
                     .passwordHash(passwordEncoder.encode("service123"))
                     .active(true)
                     .role(serviceRole)
@@ -122,9 +126,9 @@ public class DataInitializer implements CommandLineRunner {
                 return;
             }
             switch (user.getUsername()) {
-                case "admin" -> user.setRole(adminRole);
-                case "operador" -> user.setRole(operatorRole);
-                case "service" -> user.setRole(serviceRole);
+                case USERNAME_ADMIN -> user.setRole(adminRole);
+                case USERNAME_OPERADOR -> user.setRole(operatorRole);
+                case USERNAME_SERVICE -> user.setRole(serviceRole);
                 default -> user.setRole(clientRole);
             }
             userRepository.save(user);
