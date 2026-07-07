@@ -34,10 +34,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/zonas/**", "/api/espacios/**")
-                            .hasAnyRole("ADMIN", "CLIENT", "SERVICE")
+                            .hasAnyRole("ADMIN", "OPERATOR", "CLIENT", "SERVICE")
                         .requestMatchers(HttpMethod.PUT, "/api/espacios/*/estado", "/api/espacios/*/reservar")
-                            .hasAnyRole("ADMIN", "CLIENT", "SERVICE")
-                        .requestMatchers("/api/zonas/**", "/api/espacios/**").hasRole("ADMIN")
+                            .hasAnyRole("ADMIN", "OPERATOR", "CLIENT", "SERVICE")
+                        .requestMatchers("/api/zonas/**", "/api/espacios/**").hasAnyRole("ADMIN", "OPERATOR")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

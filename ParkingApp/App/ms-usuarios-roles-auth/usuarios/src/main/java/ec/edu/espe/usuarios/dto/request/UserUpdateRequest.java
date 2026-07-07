@@ -4,12 +4,7 @@ import lombok.Data;
 import jakarta.validation.constraints.*;
 
 @Data
-public class UserCreateRequest {
-
-    @NotBlank(message = "DNI is required")
-    @Size(max = 10, message = "DNI must be at most 10 characters")
-    @Pattern(regexp = "^[0-9]+$", message = "DNI must contain only digits")
-    private String dni;
+public class UserUpdateRequest {
 
     @NotBlank(message = "Firstname is required")
     @Size(max = 25, message = "Firstname must be at most 25 characters")

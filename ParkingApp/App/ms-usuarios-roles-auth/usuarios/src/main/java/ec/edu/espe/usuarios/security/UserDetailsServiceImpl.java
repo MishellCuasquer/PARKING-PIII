@@ -9,7 +9,8 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import java.util.stream.Collectors;
+import java.util.Collections;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -26,12 +27,14 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             throw new UsernameNotFoundException("User is inactive: " + username);
         }
 
+        List<SimpleGrantedAuthority> authorities = user.getRole() != null
+                ? Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().getName()))
+                : Collections.emptyList();
+
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPasswordHash())
-                .authorities(user.getUserRoles().stream()
-                        .map(userRole -> new SimpleGrantedAuthority("ROLE_" + userRole.getRole().getName()))
-                        .collect(Collectors.toList()))
+                .authorities(authorities)
                 .accountLocked(!user.getActive())
                 .build();
     }

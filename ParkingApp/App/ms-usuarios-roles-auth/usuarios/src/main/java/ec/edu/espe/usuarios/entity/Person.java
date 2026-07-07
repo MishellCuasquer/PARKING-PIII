@@ -33,7 +33,7 @@ public class Person {
     @Column(nullable = false, length = 25)
     private String lastName;
 
-    @Column(nullable = false, length = 25, unique = true)
+    @Column(nullable = false, length = 100, unique = true)
     private String email;
 
     @Column(nullable = false, length = 15, unique = true)

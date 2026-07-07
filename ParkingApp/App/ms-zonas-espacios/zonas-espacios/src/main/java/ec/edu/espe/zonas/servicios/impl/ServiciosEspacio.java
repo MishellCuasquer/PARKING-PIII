@@ -1,5 +1,6 @@
 package ec.edu.espe.zonas.servicios.impl;
 
+import ec.edu.espe.zonas.audit.AuditPublisher;
 import ec.edu.espe.zonas.dto.request.EspacioRequestDto;
 import ec.edu.espe.zonas.dto.response.EspacioResponseDto;
 import ec.edu.espe.zonas.entidades.Espacio;
@@ -27,6 +28,9 @@ public class ServiciosEspacio implements EspacioServicio {
 
     @Autowired
     private ZonaRepositorio zonaRepositorio;
+
+    @Autowired
+    private AuditPublisher auditPublisher;
 
     /**
      * Obtiene el estado general de todos los espacios del parqueadero
@@ -75,6 +79,12 @@ public class ServiciosEspacio implements EspacioServicio {
                 .build();
 
         Espacio espacioGuardado = espacioRepositorio.save(nuevoEspacio);
+
+        auditPublisher.publish("CREATE", "Espacio", Map.of(
+                "id", espacioGuardado.getId(),
+                "nombre", espacioGuardado.getNombre()
+        ));
+
         return mapearEspacioADto(espacioGuardado);
     }
 
@@ -101,6 +111,11 @@ public class ServiciosEspacio implements EspacioServicio {
                 .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
 
         espacioRepositorio.delete(espacio);
+
+        auditPublisher.publish("DELETE", "Espacio", Map.of(
+                "id", uuid,
+                "nombre", espacio.getNombre()
+        ));
     }
 
     /**
@@ -124,6 +139,12 @@ public class ServiciosEspacio implements EspacioServicio {
 
         actualizarEstadoEspacio(espacio, estado);
         Espacio espacioActualizado = espacioRepositorio.save(espacio);
+
+        auditPublisher.publish("UPDATE", "Espacio", Map.of(
+                "id", espacioActualizado.getId(),
+                "estado", espacioActualizado.getEstado().name()
+        ));
+
         return mapearEspacioADto(espacioActualizado);
     }
 
@@ -142,6 +163,12 @@ public class ServiciosEspacio implements EspacioServicio {
 
         actualizarEstadoEspacio(espacio, EstadoEspacio.RESERVADO);
         Espacio espacioReservado = espacioRepositorio.save(espacio);
+
+        auditPublisher.publish("UPDATE", "Espacio", Map.of(
+                "id", espacioReservado.getId(),
+                "estado", espacioReservado.getEstado().name()
+        ));
+
         return mapearEspacioADto(espacioReservado);
     }
 

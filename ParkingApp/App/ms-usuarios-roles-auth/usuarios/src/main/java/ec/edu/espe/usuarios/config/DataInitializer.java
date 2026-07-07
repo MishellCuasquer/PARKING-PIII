@@ -4,7 +4,6 @@ import ec.edu.espe.usuarios.entity.*;
 import ec.edu.espe.usuarios.repository.PersonRepository;
 import ec.edu.espe.usuarios.repository.RoleRepository;
 import ec.edu.espe.usuarios.repository.UserRepository;
-import ec.edu.espe.usuarios.repository.UserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,15 +17,16 @@ public class DataInitializer implements CommandLineRunner {
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
     private final PersonRepository personRepository;
-    private final UserRoleRepository userRoleRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional
     public void run(String... args) {
         Role adminRole = ensureRole("ADMIN", "Administrador del sistema");
+        Role operatorRole = ensureRole("OPERATOR", "Operador del parqueadero");
         Role clientRole = ensureRole("CLIENT", "Cliente del parqueadero");
         Role serviceRole = ensureRole("SERVICE", "Cuenta de servicio entre microservicios");
+
         if (!userRepository.existsByUsername("admin")) {
             Person person = Person.builder()
                     .dni("0000000000")
@@ -37,18 +37,36 @@ public class DataInitializer implements CommandLineRunner {
                     .nationality("EC")
                     .build();
             person = personRepository.save(person);
-            System.out.println("MiddleName = [" + person.getMiddleName() + "]");
 
             User admin = User.builder()
                     .person(person)
                     .username("admin")
                     .passwordHash(passwordEncoder.encode("admin123"))
                     .active(true)
+                    .role(adminRole)
                     .build();
-            admin = userRepository.save(admin);
+            userRepository.save(admin);
+        }
 
-            assignRole(admin, adminRole);
-            assignRole(admin, clientRole);
+        if (!userRepository.existsByUsername("operador")) {
+            Person operatorPerson = Person.builder()
+                    .dni("2222222222")
+                    .firstName("Operador")
+                    .lastName("Demo")
+                    .email("operador@parking.local")
+                    .phone("2222222222")
+                    .nationality("EC")
+                    .build();
+            operatorPerson = personRepository.save(operatorPerson);
+
+            User operatorUser = User.builder()
+                    .person(operatorPerson)
+                    .username("operador")
+                    .passwordHash(passwordEncoder.encode("operador123"))
+                    .active(true)
+                    .role(operatorRole)
+                    .build();
+            userRepository.save(operatorUser);
         }
 
         if (!userRepository.existsByUsername("service")) {
@@ -67,9 +85,9 @@ public class DataInitializer implements CommandLineRunner {
                     .username("service")
                     .passwordHash(passwordEncoder.encode("service123"))
                     .active(true)
+                    .role(serviceRole)
                     .build();
-            serviceUser = userRepository.save(serviceUser);
-            assignRole(serviceUser, serviceRole);
+            userRepository.save(serviceUser);
         }
 
         if (!userRepository.existsByUsername("cliente")) {
@@ -88,12 +106,29 @@ public class DataInitializer implements CommandLineRunner {
                     .username("cliente")
                     .passwordHash(passwordEncoder.encode("cliente123"))
                     .active(true)
+                    .role(clientRole)
                     .build();
-            clientUser = userRepository.save(clientUser);
-            assignRole(clientUser, clientRole);
+            userRepository.save(clientUser);
         }
 
         migrarContrasenasSinHashear();
+        backfillRolesForExistingUsers(adminRole, operatorRole, clientRole, serviceRole);
+    }
+
+    // Usuarios de una BD previa a la columna role_id quedan con role=null tras ddl-auto=update; se resuelven aquí.
+    private void backfillRolesForExistingUsers(Role adminRole, Role operatorRole, Role clientRole, Role serviceRole) {
+        userRepository.findAll().forEach(user -> {
+            if (user.getRole() != null) {
+                return;
+            }
+            switch (user.getUsername()) {
+                case "admin" -> user.setRole(adminRole);
+                case "operador" -> user.setRole(operatorRole);
+                case "service" -> user.setRole(serviceRole);
+                default -> user.setRole(clientRole);
+            }
+            userRepository.save(user);
+        });
     }
 
     private void migrarContrasenasSinHashear() {
@@ -111,17 +146,5 @@ public class DataInitializer implements CommandLineRunner {
                 .orElseGet(() -> roleRepository.save(
                         Role.builder().name(name).description(description).active(true).build()
                 ));
-    }
-
-    private void assignRole(User user, Role role) {
-        UserRoleId id = new UserRoleId(user.getId(), role.getId());
-        if (!userRoleRepository.existsByUserIdAndRoleId(user.getId(), role.getId())) {
-            userRoleRepository.save(UserRole.builder()
-                    .id(id)
-                    .user(user)
-                    .role(role)
-                    .active(true)
-                    .build());
-        }
     }
 }
