@@ -7,7 +7,7 @@ import { Ticket } from './entities/ticket.entity';
 import { ConfigService } from '@nestjs/config';
 import { Persona } from './interfaces/persona.interface';
 import { Espacio } from './interfaces/espacio.interface';
-import { HttpClientService } from 'src/common/htppl-cliente.service';
+import { HttpClientService } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 
 interface Vehiculo {
