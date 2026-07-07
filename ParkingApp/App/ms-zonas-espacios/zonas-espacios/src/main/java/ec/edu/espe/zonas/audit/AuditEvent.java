@@ -12,6 +12,6 @@ public record AuditEvent(
         String ip,
         String mac
 ) {
-
+//****
     // // Prueba de actualización para activar GitHub Actions
 }
