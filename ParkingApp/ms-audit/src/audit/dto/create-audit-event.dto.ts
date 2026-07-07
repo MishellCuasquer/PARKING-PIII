@@ -1,4 +1,4 @@
-import { IsIP,IsString, IsNotEmpty, MaxLength, MinLength, Matches, IsObject, IsOptional, Max, Min, IsMACAddress } from 'class-validator';
+import { IsIP, IsString, IsNotEmpty, MaxLength, MinLength, Matches, IsObject, IsOptional } from 'class-validator';
 
 export class CreateAuditEventDto {
     @IsString()

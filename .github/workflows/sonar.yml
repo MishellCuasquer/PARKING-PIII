@@ -55,31 +55,37 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+          cache-dependency-path: |
+            ParkingApp/package-lock.json
+            ParkingApp/ms-audit/package-lock.json
 
       - name: Test + coverage (Java, genera jacoco.xml)
-        run: mvn -f pom.xml clean verify --batch-mode
+        run: mvn -f ParkingApp/pom.xml clean verify --batch-mode
 
       - name: Install dependencies (workspace npm raiz)
+        working-directory: ParkingApp
         run: npm ci
 
       - name: Test + coverage (ms-vehiculos)
-        working-directory: App/ms-vehiculos
+        working-directory: ParkingApp/App/ms-vehiculos
         run: npx jest --coverage
 
       - name: Test + coverage (ms-tickets)
-        working-directory: App/ms-tickets
+        working-directory: ParkingApp/App/ms-tickets
         run: npx jest --coverage
 
       - name: Install dependencies (ms-audit)
-        working-directory: ms-audit
+        working-directory: ParkingApp/ms-audit
         run: npm ci
 
       - name: Test + coverage (ms-audit)
-        working-directory: ms-audit
+        working-directory: ParkingApp/ms-audit
         run: npx jest --coverage
 
       - name: SonarCloud scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
+        with:
+          projectBaseDir: ParkingApp
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

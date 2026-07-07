@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateAuditEventDto } from './dto/create-audit-event.dto';
-import { UpdateAuditDto } from './dto/update-audit.dto';
 import { EventoAuditoria } from './entities/evento-auditoria.entity';
 
 @Injectable()
@@ -10,7 +9,7 @@ export class AuditService {
  
   constructor(
     @InjectRepository(EventoAuditoria)
-    private auditRepo: Repository<EventoAuditoria>,
+    private readonly auditRepo: Repository<EventoAuditoria>,
   ) {}
   
 

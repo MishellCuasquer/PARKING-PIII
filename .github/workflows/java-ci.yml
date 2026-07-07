@@ -49,4 +49,4 @@ jobs:
           cache: maven
 
       - name: Build + test + quality gate (checkstyle, jacoco) for both microservicios Java
-        run: mvn -f pom.xml clean verify --batch-mode
+        run: mvn -f ParkingApp/pom.xml clean verify --batch-mode
