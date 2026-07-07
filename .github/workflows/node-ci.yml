@@ -1,0 +1,71 @@
+name: Node CI (quality gate)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ms-vehiculos y ms-tickets viven en el workspace npm de la raiz (package.json raiz).
+  workspaces:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [ParkingApp/App/ms-vehiculos, ParkingApp/App/ms-tickets]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ParkingApp/package-lock.json
+
+      - name: Install dependencies (workspace root)
+        working-directory: ParkingApp
+        run: npm ci
+
+      - name: Lint (informativo, no bloquea el build todavia)
+        working-directory: ${{ matrix.service }}
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Build (tsc)
+        working-directory: ${{ matrix.service }}
+        run: npm run build
+
+      - name: Test + coverage
+        working-directory: ${{ matrix.service }}
+        run: npx jest --coverage
+
+  # ms-audit tiene su propio package-lock.json, no forma parte del workspace raiz.
+  ms-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ParkingApp/ms-audit/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ParkingApp/ms-audit
+        run: npm ci
+
+      - name: Lint (informativo, no bloquea el build todavia)
+        working-directory: ParkingApp/ms-audit
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Build (tsc)
+        working-directory: ParkingApp/ms-audit
+        run: npm run build
+
+      - name: Test + coverage
+        working-directory: ParkingApp/ms-audit
+        run: npx jest --coverage

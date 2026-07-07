@@ -1,28 +1,45 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateVehiculoDto } from './dto/create-vehiculo.dto';
 import { UpdateVehiculoDto } from './dto/update-vehiculo.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Vehiculo } from './entities/vehiculo.entity';
 import { Repository } from 'typeorm';
 import { FactoryVehiculos } from './factory/factory-vehiculos';
+import { AuditEvent, EventPublisher } from '../common/event-publisher.service';
 
 @Injectable()
 export class VehiculosService {
+ 
 
 constructor(
   @InjectRepository(Vehiculo) 
   private vehiculoRepository: Repository<Vehiculo>,
+  private eventPublisher: EventPublisher
 ) {}
 
-async create(createVehiculoDto: CreateVehiculoDto): Promise<Vehiculo> {
-  const existe = await this.vehiculoRepository.findOne({ 
+// Método auxiliar para publicar eventos
+  private async emitEvent(accion: string, vehiculo: Vehiculo, userId?: string, ip?: string, datosExtra?: any) {
+    const event: AuditEvent = {
+      servicio: 'ms-vehiculos',
+      accion,
+      entidad: 'Vehiculo',
+      datos: { ...vehiculo, ...datosExtra },
+      usuario: userId || 'system',
+      ip: ip || '127.0.0.1',
+      mac: 'N/A' // No es posible obtener MAC en aplicaciones web por seguridad
+    };
+    await this.eventPublisher.publishEvent(event);
+  }
+async create(createVehiculoDto: CreateVehiculoDto, userId?: string, ip?: string): Promise<Vehiculo> {
+  const existe = await this.vehiculoRepository.findOne({
     where: { placa: createVehiculoDto.datos.placa } });
   if (existe) {
-    throw new Error('Vehículo ya existe con esta placa' );
+    throw new ConflictException('Vehículo ya existe con esta placa' );
   }
   const vehiculo = FactoryVehiculos.crear(createVehiculoDto);
-  return this.vehiculoRepository.save(vehiculo);
-
+  const saved = await this.vehiculoRepository.save(vehiculo);
+  await this.emitEvent('CREATE', saved, userId, ip);
+  return saved;
 }
 
 
@@ -33,7 +50,7 @@ async create(createVehiculoDto: CreateVehiculoDto): Promise<Vehiculo> {
   async findOne(id: string): Promise<Vehiculo> {
     const vehiculo = await this.vehiculoRepository.findOne({ where: { id } });
     if (!vehiculo) {
-      throw new Error('Vehículo no encontrado');
+      throw new NotFoundException('Vehículo no encontrado');
     }
     return vehiculo;
   }
@@ -46,14 +63,21 @@ async create(createVehiculoDto: CreateVehiculoDto): Promise<Vehiculo> {
     return vehiculo;
   }
 
-  async update(id: string, updateVehiculoDto: UpdateVehiculoDto): Promise<Vehiculo> {
+  async update(id: string, updateVehiculoDto: UpdateVehiculoDto, userId?: string, ip?: string): Promise<Vehiculo> {
     const vehiculo = await this.findOne(id);
+    // Actualizar solo los campos proporcionados
     Object.assign(vehiculo, updateVehiculoDto);
-    return this.vehiculoRepository.save(vehiculo);
+    const updated = await this.vehiculoRepository.save(vehiculo);
+    // Recargar el vehículo para obtener todos los campos correctamente
+    const reloaded = await this.findOne(updated.id);
+    // Enviar solo los campos modificados en auditoría
+    await this.emitEvent('UPDATE', reloaded, userId, ip, { camposModificados: updateVehiculoDto });
+    return reloaded;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, userId?: string, ip?: string): Promise<void> {
     const vehiculo = await this.findOne(id);
+    await this.emitEvent('DELETE', vehiculo, userId, ip);
     await this.vehiculoRepository.remove(vehiculo);
   }
 }
