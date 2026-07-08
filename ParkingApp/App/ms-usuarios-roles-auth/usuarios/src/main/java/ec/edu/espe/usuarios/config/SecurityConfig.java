@@ -62,11 +62,11 @@ public class SecurityConfig {
 
                         // Personas: crear
                         .requestMatchers(HttpMethod.POST, "/api/personas")
-                        .hasAnyRole("ADMIN", "CLIENT")
+                        .hasAnyRole("ADMIN", "OPERATOR", "CLIENT")
 
-                        // Personas: consultar por DNI o listar
+                        // Personas: consultar por DNI o listar (CLIENT la necesita para emitir sus propios tickets)
                         .requestMatchers(HttpMethod.GET, "/api/personas/**")
-                        .hasAnyRole("ADMIN", "SERVICE")
+                        .hasAnyRole("ADMIN", "OPERATOR", "CLIENT", "SERVICE")
 
                         // Cualquier otra petición requiere autenticación
                         .anyRequest().authenticated()

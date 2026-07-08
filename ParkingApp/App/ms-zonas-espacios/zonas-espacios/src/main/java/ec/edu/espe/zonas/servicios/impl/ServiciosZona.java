@@ -1,5 +1,6 @@
 package ec.edu.espe.zonas.servicios.impl;
 
+import ec.edu.espe.zonas.audit.AuditPublisher;
 import ec.edu.espe.zonas.dto.request.ZonaRequestDto;
 import ec.edu.espe.zonas.dto.response.ZonaResponseDto;
 import ec.edu.espe.zonas.entidades.Zona;
@@ -17,17 +18,22 @@ import ec.edu.espe.zonas.entidades.TipoZona;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ServiciosZona implements ZonaServicio {
+    private static final String CAMPO_NOMBRE = "nombre";
+
     private final MapperUtils mapper;
 
     private final ZonaRepositorio zonaRepositorio;
 
     private final EspacioRepositorio espacioRepositorio;
+
+    private final AuditPublisher auditPublisher;
 
     private String generarCodigo(TipoZona tipo) {
 
@@ -98,6 +104,12 @@ public class ServiciosZona implements ZonaServicio {
         ZonaResponseDto dto = mapper.toZonaResponseDto(zonaSaved);
         long cnt = espacioRepositorio.countByZonaId(zonaSaved.getId());
         dto.setEspacios((int) cnt);
+
+        auditPublisher.publish("CREATE", "Zona", Map.of(
+                "id", zonaSaved.getId(),
+                CAMPO_NOMBRE, zonaSaved.getNombre()
+        ));
+
         return dto;
     }
 
@@ -118,8 +130,14 @@ public class ServiciosZona implements ZonaServicio {
         objZona.setCapacidad(requestDto.getCapacidad());
         objZona.setTipo(requestDto.getTipo());
 
-        return mapper.toZonaResponseDto(
-                zonaRepositorio.save(objZona));
+        Zona zonaActualizada = zonaRepositorio.save(objZona);
+
+        auditPublisher.publish("UPDATE", "Zona", Map.of(
+                "id", zonaActualizada.getId(),
+                CAMPO_NOMBRE, zonaActualizada.getNombre()
+        ));
+
+        return mapper.toZonaResponseDto(zonaActualizada);
     }
 
     @Override
@@ -141,6 +159,11 @@ public class ServiciosZona implements ZonaServicio {
         }
 
         zonaRepositorio.deleteById(id);
+
+        auditPublisher.publish("DELETE", "Zona", Map.of(
+                "id", id,
+                CAMPO_NOMBRE, zona.getNombre()
+        ));
     }
 
     @Override

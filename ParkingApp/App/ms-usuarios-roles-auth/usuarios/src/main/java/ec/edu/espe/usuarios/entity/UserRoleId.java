@@ -2,7 +2,7 @@ package ec.edu.espe.usuarios.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
-import jakarta.persistence.Id;
+
 import lombok.*;
 
 import java.io.Serializable;

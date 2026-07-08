@@ -25,6 +25,7 @@ public class UserCreateRequest {
 
     @NotBlank(message = "Email is required")
     @Email(message = "Invalid email format")
+    @Size(max = 100, message = "Email must be at most 100 characters")
     private String email;
 
     @Pattern(regexp = "^[0-9]+$", message = "Phone must contain only digits")

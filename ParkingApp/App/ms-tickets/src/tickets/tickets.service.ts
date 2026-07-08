@@ -9,6 +9,7 @@ import { Persona } from './interfaces/persona.interface';
 import { Espacio } from './interfaces/espacio.interface';
 import { HttpClientService } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
+import { AuditEvent, EventPublisher } from '../common/event-publisher.service';
 
 interface Vehiculo {
   placa: string;
@@ -36,6 +37,7 @@ export class TicketsService {
     private readonly httpClient: HttpClientService,
     private readonly configService: ConfigService,
     private readonly serviceTokenService: ServiceTokenService,
+    private readonly eventPublisher: EventPublisher,
   ) {
     this.personaUrl = this.configService.get<string>('MS_PERSONA', '');
     this.espacioUrl =
@@ -45,7 +47,25 @@ export class TicketsService {
     this.tarifaPorHora = Number(this.configService.get<string>('TARIFA_HORA', '1.0'));
   }
 
-  async create(createTicketDto: CreateTicketDto, authorization?: string): Promise<Ticket> {
+  private async emitEvent(accion: string, ticket: Ticket, userId?: string, ip?: string, datosExtra?: any) {
+    const event: AuditEvent = {
+      servicio: 'ms-tickets',
+      accion,
+      entidad: 'Ticket',
+      datos: { ...ticket, ...datosExtra },
+      usuario: userId || 'system',
+      ip: ip || '127.0.0.1',
+      mac: 'N/A',
+    };
+    await this.eventPublisher.publishEvent(event);
+  }
+
+  async create(
+    createTicketDto: CreateTicketDto,
+    authorization?: string,
+    emisorUserId?: string,
+    ip?: string,
+  ): Promise<Ticket> {
     const persona = await this.validarPersona(createTicketDto.dni, authorization);
     if (!persona) {
       throw new BadRequestException(`No se encontró una persona con DNI ${createTicketDto.dni}`);
@@ -70,26 +90,30 @@ export class TicketsService {
       );
     }
 
-    const ticketGuardado = await this.emitirTicket(createTicketDto, espacio, authorization);
+    const ticketGuardado = await this.emitirTicket(createTicketDto, espacio, authorization, emisorUserId);
     this.logger.log(`Ticket creado con ID ${ticketGuardado.id} para placa ${createTicketDto.placa}`);
+    await this.emitEvent('CREATE', ticketGuardado, emisorUserId, ip);
     return ticketGuardado;
   }
 
-  findAll(): Promise<Ticket[]> {
-    return this.ticketRepository.find({ order: { fechhaHoraIngreso: 'DESC' } });
+  findAll(ownerUserId?: string): Promise<Ticket[]> {
+    return this.ticketRepository.find({
+      where: ownerUserId ? { emisorUserId: ownerUserId } : {},
+      order: { fechhaHoraIngreso: 'DESC' },
+    });
   }
 
-  async findOne(id: string): Promise<Ticket> {
+  async findOne(id: string, ownerUserId?: string): Promise<Ticket> {
     const ticket = await this.ticketRepository.findOne({ where: { id } });
-    if (!ticket) {
+    if (!ticket || (ownerUserId && ticket.emisorUserId !== ownerUserId)) {
       throw new NotFoundException(`Ticket con id ${id} no encontrado`);
     }
     return ticket;
   }
 
-  async findActivos(): Promise<Ticket[]> {
+  async findActivos(ownerUserId?: string): Promise<Ticket[]> {
     return this.ticketRepository.find({
-      where: { activo: true },
+      where: ownerUserId ? { activo: true, emisorUserId: ownerUserId } : { activo: true },
       order: { fechhaHoraIngreso: 'DESC' },
     });
   }
@@ -98,6 +122,8 @@ export class TicketsService {
     id: string,
     updateTicketDto: UpdateTicketDto,
     authorization?: string,
+    cobradorUserId?: string,
+    ip?: string,
   ): Promise<Ticket> {
     const ticket = await this.findOne(id);
 
@@ -132,16 +158,22 @@ export class TicketsService {
     ticket.activo = false;
     ticket.fechhaHoraSalida = fechaSalida;
     ticket.valorRecaudo = costo;
+    ticket.cobradorUserId = cobradorUserId;
 
     await this.actualizarEstadoEspacio(ticket.idEspacio, 'DISPONIBLE', authorization);
 
     const closedTicket = await this.ticketRepository.save(ticket);
     this.logger.log(`Ticket con ID ${id} cerrado`);
+    await this.emitEvent('UPDATE', closedTicket, cobradorUserId, ip, {
+      valorRecaudo: closedTicket.valorRecaudo,
+      cobradorUserId,
+    });
     return closedTicket;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, userId?: string, ip?: string): Promise<void> {
     const ticket = await this.findOne(id);
+    await this.emitEvent('DELETE', ticket, userId, ip);
     await this.ticketRepository.remove(ticket);
   }
 
@@ -230,6 +262,7 @@ export class TicketsService {
     createTicketDto: CreateTicketDto,
     espacio: Espacio,
     authorization?: string,
+    emisorUserId?: string,
   ): Promise<Ticket> {
     await this.actualizarEstadoEspacio(createTicketDto.idEspacio, 'OCUPADO', authorization);
 
@@ -241,6 +274,7 @@ export class TicketsService {
       fechhaHoraIngreso: new Date(),
       activo: true,
       valorRecaudo: 0,
+      emisorUserId,
     });
 
     try {

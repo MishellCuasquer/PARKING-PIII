@@ -73,6 +73,12 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- RABBITMQ (AUDITORIA) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!-- JWT (JJWT) -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -138,6 +144,51 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!-- CHECKSTYLE (quality gate: ruleset compartido en la raiz del monorepo) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <configLocation>${project.basedir}/../../../checkstyle.xml</configLocation>
+                    <encoding>UTF-8</encoding>
+                    <consoleOutput>true</consoleOutput>
+                    <failOnViolation>true</failOnViolation>
+                    <violationSeverity>warning</violationSeverity>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>checkstyle-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- JACOCO (cobertura: reporte por ahora, sin umbral hasta que existan tests) -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
         </plugins>

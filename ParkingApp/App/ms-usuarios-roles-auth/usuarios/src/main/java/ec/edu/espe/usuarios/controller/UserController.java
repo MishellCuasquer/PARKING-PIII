@@ -2,6 +2,7 @@ package ec.edu.espe.usuarios.controller;
 
 
 import ec.edu.espe.usuarios.dto.request.UserCreateRequest;
+import ec.edu.espe.usuarios.dto.request.UserUpdateRequest;
 import ec.edu.espe.usuarios.dto.response.UserResponse;
 import ec.edu.espe.usuarios.services.UserService;
 import jakarta.validation.Valid;
@@ -40,6 +41,15 @@ public class UserController {
             @PathVariable UUID roleId) {
 
         UserResponse response = userService.assignRole(userId, roleId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/{userId}")
+    public ResponseEntity<UserResponse> updateUser(
+            @PathVariable UUID userId,
+            @Valid @RequestBody UserUpdateRequest request) {
+
+        UserResponse response = userService.updateUser(userId, request);
         return ResponseEntity.ok(response);
     }
 }
