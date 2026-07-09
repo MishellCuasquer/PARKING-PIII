@@ -39,6 +39,14 @@ export class Ticket {
     @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
     valorRecaudo!: number;
 
+    @ApiPropertyOptional({ description: 'Usuario (userId del JWT) que emitió el ticket' })
+    @Column({ nullable: true })
+    emisorUserId?: string;
+
+    @ApiPropertyOptional({ description: 'Usuario (userId del JWT) que cerró/cobró el ticket' })
+    @Column({ nullable: true })
+    cobradorUserId?: string;
+
     @CreateDateColumn()
     createdAt!: Date;
 

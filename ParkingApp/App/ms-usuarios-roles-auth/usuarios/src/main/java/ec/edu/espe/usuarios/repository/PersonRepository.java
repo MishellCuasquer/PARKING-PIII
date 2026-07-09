@@ -14,4 +14,8 @@ public interface PersonRepository extends JpaRepository<Person, UUID> {
 
     Optional<Person> findByDni(String dni);
 
+    Optional<Person> findByEmail(String email);
+
+    Optional<Person> findByPhone(String phone);
+
 }

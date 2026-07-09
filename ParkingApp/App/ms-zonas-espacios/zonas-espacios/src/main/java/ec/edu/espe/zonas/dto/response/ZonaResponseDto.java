@@ -1,8 +1,6 @@
 package ec.edu.espe.zonas.dto.response;
 
-import ec.edu.espe.zonas.entidades.EstadoEspacio;
 import ec.edu.espe.zonas.entidades.TipoZona;
-import ec.edu.espe.zonas.entidades.Zona;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

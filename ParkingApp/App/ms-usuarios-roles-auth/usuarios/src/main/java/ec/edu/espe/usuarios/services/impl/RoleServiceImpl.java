@@ -1,5 +1,6 @@
 package ec.edu.espe.usuarios.services.impl;
 
+import ec.edu.espe.usuarios.audit.AuditPublisher;
 import ec.edu.espe.usuarios.dto.request.RoleCreateRequest;
 import ec.edu.espe.usuarios.dto.response.RoleResponse;
 import ec.edu.espe.usuarios.entity.Role;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -19,6 +21,7 @@ import java.util.stream.Collectors;
 public class RoleServiceImpl implements RoleService {
 
     private final RoleRepository roleRepository;
+    private final AuditPublisher auditPublisher;
 
     @Override
     public RoleResponse createRole(RoleCreateRequest roleRequest) {
@@ -36,6 +39,11 @@ public class RoleServiceImpl implements RoleService {
                 .build();
 
         role = roleRepository.save(role);
+
+        auditPublisher.publish("CREATE", "Role", Map.of(
+                "id", role.getId(),
+                "name", role.getName()
+        ));
 
         return mapToRoleResponse(role);
     }

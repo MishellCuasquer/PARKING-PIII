@@ -4,8 +4,6 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -39,9 +37,9 @@ public class User {
     @Builder.Default
     private Boolean active = true;
 
-    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
-    @Builder.Default
-    private Set<UserRole> userRoles = new HashSet<>();
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_role")
+    private Role role;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

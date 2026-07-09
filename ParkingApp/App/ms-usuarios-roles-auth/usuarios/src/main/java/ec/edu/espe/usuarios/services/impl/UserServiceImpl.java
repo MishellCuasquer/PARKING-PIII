@@ -1,13 +1,14 @@
 package ec.edu.espe.usuarios.services.impl;
 
+import ec.edu.espe.usuarios.audit.AuditPublisher;
 import ec.edu.espe.usuarios.dto.request.UserCreateRequest;
+import ec.edu.espe.usuarios.dto.request.UserUpdateRequest;
 import ec.edu.espe.usuarios.dto.response.PersonResponse;
 import ec.edu.espe.usuarios.dto.response.UserResponse;
 import ec.edu.espe.usuarios.entity.*;
 import ec.edu.espe.usuarios.repository.PersonRepository;
 import ec.edu.espe.usuarios.repository.RoleRepository;
 import ec.edu.espe.usuarios.repository.UserRepository;
-import ec.edu.espe.usuarios.repository.UserRoleRepository;
 import ec.edu.espe.usuarios.services.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -16,7 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -25,11 +28,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    private static final String CAMPO_USERNAME = "username";
+
     private final UserRepository userRepository;
     private final PersonRepository personRepository;
-    private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditPublisher auditPublisher;
 
     @Override
     public UserResponse createUser(UserCreateRequest userRequest) {
@@ -42,41 +47,39 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException("La identificación DNI ya existe");
         }
 
-        // Creación de Person
+        // Creación de Person (middleName/nationality son NOT NULL en BD pero opcionales en el request)
         Person person = Person.builder()
                 .dni(userRequest.getDni())
                 .firstName(userRequest.getFirstName())
-                .middleName(userRequest.getMiddleName())
+                .middleName(nullToEmpty(userRequest.getMiddleName()))
                 .lastName(userRequest.getLastName())
                 .email(userRequest.getEmail())
                 .phone(userRequest.getPhone())
                 .address(userRequest.getAddress())
-                .nationality(userRequest.getNationality())
+                .nationality(nullToEmpty(userRequest.getNationality()))
                 .build();
 
         person = personRepository.save(person);
 
+        Role clientRole = roleRepository.findByName("CLIENT")
+                .orElseThrow(() -> new IllegalStateException("Rol CLIENT no configurado"));
+
         User user = User.builder()
-                //.id(person.getId())
                 .person(person)
                 .username(generarUsername(
                         userRequest.getFirstName(),
                         userRequest.getMiddleName(),
                         userRequest.getLastName()))
                 .passwordHash(passwordEncoder.encode(userRequest.getDni()))
+                .role(clientRole)
                 .build();
 
         User savedUser = userRepository.save(user);
 
-        roleRepository.findByName("CLIENT").ifPresent(clientRole -> {
-            UserRoleId userRoleId = new UserRoleId(savedUser.getId(), clientRole.getId());
-            userRoleRepository.save(UserRole.builder()
-                    .id(userRoleId)
-                    .user(savedUser)
-                    .role(clientRole)
-                    .active(true)
-                    .build());
-        });
+        auditPublisher.publish("CREATE", "User", Map.of(
+                "id", savedUser.getId(),
+                CAMPO_USERNAME, savedUser.getUsername()
+        ));
 
         return mapToUserResponse(savedUser);
     }
@@ -99,7 +102,7 @@ public class UserServiceImpl implements UserService {
         return mapToUserResponse(user);
     }
 
-    //asignar el rol a una persona
+    // Asigna un rol a un usuario, reemplazando el rol anterior (un usuario = un solo rol activo)
     @Override
     public UserResponse assignRole(UUID userId, UUID roleId) {
 
@@ -111,37 +114,70 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Rol no encontrado"));
 
-        // Validar si ya existe la relación
-        if (userRoleRepository.existsByUserIdAndRoleId(userId, roleId)) {
+        if (user.getRole() != null && roleId.equals(user.getRole().getId())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "El rol ya está asignado al usuario");
         }
 
-        // Crear ID compuesto
-        UserRoleId userRoleId = new UserRoleId(userId, roleId);
+        user.setRole(role);
+        userRepository.save(user);
 
-        // Crear relación
-        UserRole userRole = UserRole.builder()
-                .id(userRoleId)
-                .user(user)
-                .role(role)
-                .active(true)
-                .build();
-        //user.getUserRoles().add(userRole);
+        auditPublisher.publish("UPDATE", "User", Map.of(
+                "id", user.getId(),
+                CAMPO_USERNAME, user.getUsername(),
+                "role", role.getName()
+        ));
 
-        userRoleRepository.save(userRole);
-
-        // Retornar respuesta mapeada
         return mapToUserResponse(user);
     }
 
 
+    @Override
+    public UserResponse updateUser(UUID userId, UserUpdateRequest userRequest) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Usuario no encontrado"));
+
+        Person person = user.getPerson();
+
+        personRepository.findByEmail(userRequest.getEmail())
+                .filter(existing -> !existing.getId().equals(person.getId()))
+                .ifPresent(existing -> {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "El email ya está en uso");
+                });
+
+        if (userRequest.getPhone() != null && !userRequest.getPhone().isBlank()) {
+            personRepository.findByPhone(userRequest.getPhone())
+                    .filter(existing -> !existing.getId().equals(person.getId()))
+                    .ifPresent(existing -> {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "El teléfono ya está en uso");
+                    });
+        }
+
+        person.setFirstName(userRequest.getFirstName());
+        person.setMiddleName(nullToEmpty(userRequest.getMiddleName()));
+        person.setLastName(userRequest.getLastName());
+        person.setEmail(userRequest.getEmail());
+        person.setPhone(userRequest.getPhone());
+        person.setAddress(userRequest.getAddress());
+        person.setNationality(nullToEmpty(userRequest.getNationality()));
+
+        personRepository.save(person);
+
+        auditPublisher.publish("UPDATE", "User", Map.of(
+                "id", user.getId(),
+                CAMPO_USERNAME, user.getUsername()
+        ));
+
+        return mapToUserResponse(user);
+    }
+
     // Método privado helper para mapear User -> UserResponse
     private UserResponse mapToUserResponse(User user) {
-        List<String> roles = user.getUserRoles().stream()
-                .filter(UserRole::getActive)
-                .map(ur -> ur.getRole().getName())
-                .collect(Collectors.toList());
+        List<String> roles = user.getRole() != null
+                ? Collections.singletonList(user.getRole().getName())
+                : Collections.emptyList();
 
         Person person = user.getPerson();
 
@@ -167,6 +203,10 @@ public class UserServiceImpl implements UserService {
                 .person(personResponse)
                 .roles(roles)
                 .build();
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private String generarUsername(String fn, String mn, String ln) {

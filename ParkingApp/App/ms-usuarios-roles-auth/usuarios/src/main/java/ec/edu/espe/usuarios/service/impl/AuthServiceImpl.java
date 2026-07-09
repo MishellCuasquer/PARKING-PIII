@@ -1,5 +1,6 @@
 package ec.edu.espe.usuarios.service.impl;
 
+import ec.edu.espe.usuarios.audit.AuditPublisher;
 import ec.edu.espe.usuarios.config.JwtConfig;
 import ec.edu.espe.usuarios.dto.request.LoginRequest;
 import ec.edu.espe.usuarios.dto.request.OAuthTokenRequest;
@@ -15,10 +16,10 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +31,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtConfig jwtConfig;
     private final UserRepository userRepository;
     private final TokenBlacklistService tokenBlacklistService;
+    private final AuditPublisher auditPublisher;
 
     @Override
     public LoginResponse login(LoginRequest loginRequest) {
@@ -37,6 +39,11 @@ public class AuthServiceImpl implements AuthService {
         User user = loadUser(loginRequest.getUsername());
         List<String> roles = extractRoles(user);
         String token = jwtConfig.generateToken(user.getUsername(), user.getId().toString(), roles);
+
+        auditPublisher.publish("LOGIN", "User", Map.of(
+                "id", user.getId(),
+                "username", user.getUsername()
+        ));
 
         return LoginResponse.builder()
                 .token(token)
@@ -101,8 +108,8 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private List<String> extractRoles(User user) {
-        return user.getUserRoles().stream()
-                .map(userRole -> userRole.getRole().getName())
-                .collect(Collectors.toList());
+        return user.getRole() != null
+                ? Collections.singletonList(user.getRole().getName())
+                : Collections.emptyList();
     }
 }

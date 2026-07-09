@@ -28,6 +28,8 @@ import java.util.Arrays;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    private static final String ROL_OPERATOR = "OPERATOR";
+
     @Value("${jwt.secret:miClaveSecretaSuperSeguraParaJWT123456789}")
     private String jwtSecret;
 
@@ -53,10 +55,10 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/espacios").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/zonas/**", "/api/espacios/**")
-                            .hasAnyRole("ADMIN", "CLIENT", "SERVICE")
+                            .hasAnyRole("ADMIN", ROL_OPERATOR, "CLIENT", "SERVICE")
                         .requestMatchers(HttpMethod.PUT, "/api/espacios/*/estado", "/api/espacios/*/reservar")
-                            .hasAnyRole("ADMIN", "CLIENT", "SERVICE")
-                        .requestMatchers("/api/zonas/**", "/api/espacios/**").hasRole("ADMIN")
+                            .hasAnyRole("ADMIN", ROL_OPERATOR, "CLIENT", "SERVICE")
+                        .requestMatchers("/api/zonas/**", "/api/espacios/**").hasAnyRole("ADMIN", ROL_OPERATOR)
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
