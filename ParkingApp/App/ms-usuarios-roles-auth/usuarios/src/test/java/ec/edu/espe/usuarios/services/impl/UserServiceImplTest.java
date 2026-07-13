@@ -110,9 +110,9 @@ class UserServiceImplTest {
         when(roleRepository.findByName("CLIENT")).thenReturn(Optional.of(clientRole));
         when(passwordEncoder.encode(anyString())).thenReturn("hashed");
         // Primer username generado ya existe; el segundo (con contador) esta libre.
-        // La comparacion de colision usa el username antes de aplicar toLowerCase().
-        when(userRepository.findByUsernameWithRole("JCPerezR")).thenReturn(Optional.of(user));
-        when(userRepository.findByUsernameWithRole("JCPerezR1")).thenReturn(Optional.empty());
+        // La comparacion de colision usa el username ya en minusculas.
+        when(userRepository.findByUsernameWithRole("jcperezr")).thenReturn(Optional.of(user));
+        when(userRepository.findByUsernameWithRole("jcperezr1")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User u = invocation.getArgument(0);
             return User.builder().id(person.getId()).person(person).username(u.getUsername())
