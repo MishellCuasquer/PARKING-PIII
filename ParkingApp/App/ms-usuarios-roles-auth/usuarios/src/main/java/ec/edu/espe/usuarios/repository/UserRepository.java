@@ -14,6 +14,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByUsername(String username);
 
+    @Query("SELECT u FROM User u LEFT JOIN FETCH u.role WHERE u.username = :username")
+    Optional<User> findByUsernameWithRole(String username);
 
     @Query(value = "SELECT * FROM users WHERE LOWER (username) LIKE LOWER (CONCAT('%', :username, '%'))", nativeQuery = true)
     List<User> findByUsernameContainingIgnoreCase(String username);

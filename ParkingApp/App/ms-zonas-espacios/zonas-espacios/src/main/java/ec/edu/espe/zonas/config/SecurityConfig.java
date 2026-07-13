@@ -53,11 +53,19 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/**").permitAll()
+                        // Permitir acceso público para el monitoreo (solo GET list)
                         .requestMatchers(HttpMethod.GET, "/api/espacios").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/zonas").permitAll()
+                        // DELETE requiere rol ADMIN u OPERATOR
+                        .requestMatchers(HttpMethod.DELETE, "/api/zonas/**").hasAnyRole("ADMIN", ROL_OPERATOR)
+                        .requestMatchers(HttpMethod.DELETE, "/api/espacios/**").hasAnyRole("ADMIN", ROL_OPERATOR)
+                        // GET individuales requieren autenticación
                         .requestMatchers(HttpMethod.GET, "/api/zonas/**", "/api/espacios/**")
                             .hasAnyRole("ADMIN", ROL_OPERATOR, "CLIENT", "SERVICE")
+                        // PUT para estado y reservar
                         .requestMatchers(HttpMethod.PUT, "/api/espacios/*/estado", "/api/espacios/*/reservar")
                             .hasAnyRole("ADMIN", ROL_OPERATOR, "CLIENT", "SERVICE")
+                        // Otros endpoints (POST, PUT) requieren rol ADMIN u OPERATOR
                         .requestMatchers("/api/zonas/**", "/api/espacios/**").hasAnyRole("ADMIN", ROL_OPERATOR)
                         .anyRequest().authenticated()
                 )

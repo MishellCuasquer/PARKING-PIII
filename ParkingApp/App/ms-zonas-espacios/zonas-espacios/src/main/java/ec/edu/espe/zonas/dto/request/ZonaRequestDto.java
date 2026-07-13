@@ -25,4 +25,8 @@ public class ZonaRequestDto {
 
     @NotNull(message = "El tipo de zona es obligatorio")
     private TipoZona tipo;
+
+    // Si es true, se crean espacios automáticamente según la capacidad
+    // Si es false, se crea la zona sin espacios (deben crearse manualmente)
+    private Boolean crearEspaciosAutomaticamente = true;
 }

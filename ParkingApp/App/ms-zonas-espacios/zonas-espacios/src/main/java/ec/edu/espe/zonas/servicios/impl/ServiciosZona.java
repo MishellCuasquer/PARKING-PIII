@@ -79,26 +79,32 @@ public class ServiciosZona implements ZonaServicio {
         zona.setFechaActualizacion(LocalDateTime.now());
         Zona zonaSaved = zonaRepositorio.save(zona);
 
-        // Crear espacios automáticamente según capacidad
-        int capacidad = zonaSaved.getCapacidad();
-        if (capacidad > 0) {
-            List<Espacio> nuevos = new ArrayList<>();
-            for (int i = 1; i <= capacidad; i++) {
-                String nombreEspacio = zonaSaved.getCodigo() + "-" + String.format("%03d", i);
-                Espacio e = Espacio.builder()
-                        .nombre(nombreEspacio)
-                        .descripcion(null)
-                        .tipo(TipoEspacio.AUTO)
-                        .estado(ec.edu.espe.zonas.entidades.EstadoEspacio.DISPONIBLE)
-                        .zona(zonaSaved)
-                        .activo(true)
-                        .fechaCreacion(LocalDateTime.now())
-                        .build();
-                nuevos.add(e);
+        // Crear espacios automáticamente según capacidad SOLO si el flag está activo
+        Boolean crearAuto = requestDto.getCrearEspaciosAutomaticamente();
+        System.out.println("DEBUG: crearEspaciosAutomaticamente = " + crearAuto);
+        System.out.println("DEBUG: capacidad = " + zonaSaved.getCapacidad());
+        
+        if (crearAuto != null && crearAuto) {
+            int capacidad = zonaSaved.getCapacidad();
+            if (capacidad > 0) {
+                List<Espacio> nuevos = new ArrayList<>();
+                for (int i = 1; i <= capacidad; i++) {
+                    String nombreEspacio = zonaSaved.getCodigo() + "-" + String.format("%03d", i);
+                    Espacio e = Espacio.builder()
+                            .nombre(nombreEspacio)
+                            .descripcion(null)
+                            .tipo(TipoEspacio.AUTO)
+                            .estado(ec.edu.espe.zonas.entidades.EstadoEspacio.DISPONIBLE)
+                            .zona(zonaSaved)
+                            .activo(true)
+                            .fechaCreacion(LocalDateTime.now())
+                            .build();
+                    nuevos.add(e);
+                }
+                espacioRepositorio.saveAll(nuevos);
+                // Asegurar que las entidades se escriban en la base antes de contar
+                espacioRepositorio.flush();
             }
-            espacioRepositorio.saveAll(nuevos);
-            // Asegurar que las entidades se escriban en la base antes de contar
-            espacioRepositorio.flush();
         }
 
         ZonaResponseDto dto = mapper.toZonaResponseDto(zonaSaved);
