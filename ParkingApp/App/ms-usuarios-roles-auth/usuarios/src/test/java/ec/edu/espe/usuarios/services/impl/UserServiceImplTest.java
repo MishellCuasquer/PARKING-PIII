@@ -86,7 +86,7 @@ class UserServiceImplTest {
         when(personRepository.save(any(Person.class))).thenReturn(person);
         when(roleRepository.findByName("CLIENT")).thenReturn(Optional.of(clientRole));
         when(passwordEncoder.encode(anyString())).thenReturn("hashed");
-        when(userRepository.findByUsername(anyString())).thenReturn(Optional.empty());
+        when(userRepository.findByUsernameWithRole(anyString())).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenReturn(user);
 
         UserResponse response = userService.createUser(request);
@@ -112,8 +112,8 @@ class UserServiceImplTest {
         when(passwordEncoder.encode(anyString())).thenReturn("hashed");
         // Primer username generado ya existe; el segundo (con contador) esta libre.
         // La comparacion de colision usa el username antes de aplicar toLowerCase().
-        when(userRepository.findByUsername("JCPerezR")).thenReturn(Optional.of(user));
-        when(userRepository.findByUsername("JCPerezR1")).thenReturn(Optional.empty());
+        when(userRepository.findByUsernameWithRole("JCPerezR")).thenReturn(Optional.of(user));
+        when(userRepository.findByUsernameWithRole("JCPerezR1")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User u = invocation.getArgument(0);
             return User.builder().id(person.getId()).person(person).username(u.getUsername())

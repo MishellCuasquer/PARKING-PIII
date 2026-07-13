@@ -55,7 +55,7 @@ class AuthServiceImplTest {
         request.setUsername("jperez");
         request.setPassword("secret");
 
-        when(userRepository.findByUsername("jperez")).thenReturn(Optional.of(user));
+        when(userRepository.findByUsernameWithRole("jperez")).thenReturn(Optional.of(user));
         when(jwtConfig.generateToken(eq("jperez"), anyString(), any())).thenReturn("token-123");
         when(jwtConfig.getExpirationTime()).thenReturn(3600000L);
 
@@ -73,7 +73,7 @@ class AuthServiceImplTest {
         request.setUsername("fantasma");
         request.setPassword("secret");
 
-        when(userRepository.findByUsername("fantasma")).thenReturn(Optional.empty());
+        when(userRepository.findByUsernameWithRole("fantasma")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class);
@@ -88,7 +88,7 @@ class AuthServiceImplTest {
         request.setUsername("jperez");
         request.setPassword("secret");
 
-        when(userRepository.findByUsername("jperez")).thenReturn(Optional.of(user));
+        when(userRepository.findByUsernameWithRole("jperez")).thenReturn(Optional.of(user));
         when(jwtConfig.generateToken(eq("jperez"), anyString(), any())).thenReturn("token-oauth");
         when(jwtConfig.getExpirationTime()).thenReturn(3600000L);
 

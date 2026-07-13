@@ -35,7 +35,7 @@ class UserDetailsServiceImplTest {
                 .active(true)
                 .role(role)
                 .build();
-        when(userRepository.findByUsername("jperez")).thenReturn(Optional.of(user));
+        when(userRepository.findByUsernameWithRole("jperez")).thenReturn(Optional.of(user));
 
         UserDetails result = userDetailsService.loadUserByUsername("jperez");
 
@@ -45,7 +45,7 @@ class UserDetailsServiceImplTest {
 
     @Test
     void loadUserByUsername_lanzaExcepcionSiNoExiste() {
-        when(userRepository.findByUsername("fantasma")).thenReturn(Optional.empty());
+        when(userRepository.findByUsernameWithRole("fantasma")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userDetailsService.loadUserByUsername("fantasma"))
                 .isInstanceOf(UsernameNotFoundException.class);
@@ -54,7 +54,7 @@ class UserDetailsServiceImplTest {
     @Test
     void loadUserByUsername_lanzaExcepcionSiElUsuarioEstaInactivo() {
         User user = User.builder().username("inactivo").passwordHash("hash").active(false).build();
-        when(userRepository.findByUsername("inactivo")).thenReturn(Optional.of(user));
+        when(userRepository.findByUsernameWithRole("inactivo")).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> userDetailsService.loadUserByUsername("inactivo"))
                 .isInstanceOf(UsernameNotFoundException.class);
