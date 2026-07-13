@@ -73,8 +73,6 @@ class AuthServiceImplTest {
         request.setUsername("fantasma");
         request.setPassword("secret");
 
-        when(userRepository.findByUsernameWithRole("fantasma")).thenReturn(Optional.empty());
-
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class);
     }

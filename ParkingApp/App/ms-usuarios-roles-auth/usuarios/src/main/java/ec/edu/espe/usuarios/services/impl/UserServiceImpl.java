@@ -221,18 +221,20 @@ public class UserServiceImpl implements UserService {
             username += partes[1].charAt(0);
         }
 
-        if (userRepository.findByUsername(username).isPresent()) {
+        username = username.toLowerCase();
+
+        if (userRepository.findByUsernameWithRole(username).isPresent()) {
             // Username exists, append a number to make it unique
             int counter = 1;
             String newUsername = username + counter;
-            while (userRepository.findByUsername(newUsername).isPresent()) {
+            while (userRepository.findByUsernameWithRole(newUsername).isPresent()) {
                 counter++;
                 newUsername = username + counter;
             }
             username = newUsername;
         }
 
-        return username.toLowerCase();
+        return username;
     }
 
 

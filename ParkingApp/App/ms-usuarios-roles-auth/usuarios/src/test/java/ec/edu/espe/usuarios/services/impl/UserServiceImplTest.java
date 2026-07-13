@@ -86,7 +86,6 @@ class UserServiceImplTest {
         when(personRepository.save(any(Person.class))).thenReturn(person);
         when(roleRepository.findByName("CLIENT")).thenReturn(Optional.of(clientRole));
         when(passwordEncoder.encode(anyString())).thenReturn("hashed");
-        when(userRepository.findByUsernameWithRole(anyString())).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenReturn(user);
 
         UserResponse response = userService.createUser(request);

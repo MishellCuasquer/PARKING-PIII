@@ -103,7 +103,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private User loadUser(String username) {
-        return userRepository.findByUsername(username)
+        return userRepository.findByUsernameWithRole(username)
                 .orElseThrow(() -> new BadCredentialsException("User not found"));
     }
 
