@@ -3,7 +3,4 @@ kind: Namespace
 metadata:
   name: reservas
 
-
-//abrir terminal y colocar el comando cd .\k8s
-// kubectl apply -f 1-namespace.yml
-// kubectl apply -f 1-namespace.yml namespace/reservas unchanged
+# Aplicar con: kubectl apply -f 1-namespace.yml
