@@ -1,7 +1,6 @@
 package ec.edu.espe.zonas.dto.request;
 
 import ec.edu.espe.zonas.entidades.TipoEspacio;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
