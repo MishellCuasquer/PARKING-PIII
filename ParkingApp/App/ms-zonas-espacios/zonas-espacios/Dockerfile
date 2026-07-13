@@ -9,7 +9,9 @@ RUN mvn clean package -DskipTests
 # Stage 2: runtime
 FROM eclipse-temurin:21-jre-alpine
 VOLUME /tmp
+RUN addgroup -S spring && adduser -S spring -G spring
 COPY --from=build /workspace/target/*.jar /app/app.jar
+USER spring
 EXPOSE 8081
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
