@@ -1,3 +1,5 @@
+name: parkingapp
+
 services:
   kong:
     image: kong:3.6
@@ -16,6 +18,11 @@ services:
     ports:
       - "8000:8000"
       - "8001:8001"
+    depends_on:
+      - usuarios
+      - zonas-espacios
+      - vehiculos
+      - tickets
 
   postgres:
     image: postgres:16
@@ -29,6 +36,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mysql-zonas:
     image: mysql:8
@@ -41,6 +53,11 @@ services:
       - "3306:3306"
     volumes:
       - mysql_zonas_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -54,6 +71,129 @@ services:
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  usuarios:
+    build: ./App/ms-usuarios-roles-auth/usuarios
+    container_name: parking-usuarios
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8080"
+      DB_URL: jdbc:postgresql://postgres:5432/usuarios_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: "123"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  zonas-espacios:
+    build: ./App/ms-zonas-espacios/zonas-espacios
+    container_name: parking-zonas-espacios
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-zonas:3306/zonas_espacios?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: "123"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+    ports:
+      - "8081:8081"
+    depends_on:
+      mysql-zonas:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  vehiculos:
+    build: ./App/ms-vehiculos
+    container_name: parking-vehiculos
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USUARIO: postgres
+      DB_CONTRASENA: "123"
+      DB_NOMBRE: vehiculos_db
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+      RABBITMQ_EXCHANGE: exchange_audit
+      RABBITMQ_ROUTING_KEY: routing_audit
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  tickets:
+    build: ./App/ms-tickets
+    container_name: parking-tickets
+    restart: unless-stopped
+    environment:
+      PORT: "3002"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: "123"
+      DB_NAME: tickets_db
+      AUTH_TOKEN_URL: http://usuarios:8080/api/oauth/token
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+      RABBITMQ_EXCHANGE: exchange_audit
+      RABBITMQ_ROUTING_KEY: routing_audit
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      usuarios:
+        condition: service_started
+
+  ms-audit:
+    build: ./ms-audit
+    container_name: parking-audit
+    restart: unless-stopped
+    environment:
+      PORT: "3004"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: "123"
+      DB_NAME: db_audit
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+      RABBITMQ_QUEUE: queue_audit
+      RABBITMQ_EXCHANGE: exchange_audit
+      RABBITMQ_ROUTING_KEY: routing_audit
+    ports:
+      - "3004:3004"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
 volumes:
   postgres_data:
