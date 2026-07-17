@@ -1,5 +1,6 @@
-const API_ZONAS = 'http://192.168.56.1:8081/api/zonas';
-const API_ESPACIOS = 'http://192.168.56.1:8081/api/espacios';
+// Via Kong (API Gateway). GET /api/zonas y /api/espacios son públicos y con CORS habilitado.
+const API_ZONAS = 'http://localhost:8000/api/zonas';
+const API_ESPACIOS = 'http://localhost:8000/api/espacios';
 const POLLING_INTERVAL = 5000; // 5 segundos
 
 const container = document.getElementById('espaciosContainer');

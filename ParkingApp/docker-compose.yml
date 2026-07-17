@@ -62,6 +62,9 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: parking-rabbitmq
+    # Hostname fijo: RabbitMQ guarda sus datos bajo rabbit@<hostname>; si cambia
+    # en cada recreación, el arranque falla con timeout_waiting_for_khepri_projections
+    hostname: rabbitmq
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: admin
@@ -174,6 +177,13 @@ services:
       DB_PASSWORD: "123"
       DB_NAME: tickets_db
       AUTH_TOKEN_URL: http://usuarios:8080/api/oauth/token
+      SERVICE_USERNAME: service
+      SERVICE_PASSWORD: service123
+      MS_PERSONA: http://usuarios:8080/api/personas
+      MS_ZONAS: http://zonas-espacios:8081/api/zonas
+      MS_ESPACIOS: http://zonas-espacios:8081/api/espacios
+      MS_VEHICULOS: http://vehiculos:3000/vehiculos
+      TARIFA_HORA: "1.0"
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: "5672"
       RABBITMQ_USER: admin
@@ -193,6 +203,24 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+
+  frontend:
+    build: ./Frontend
+    container_name: parking-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - kong
+
+  monitoreo:
+    build: ./monitoreo
+    container_name: parking-monitoreo
+    restart: unless-stopped
+    ports:
+      - "8090:80"
+    depends_on:
+      - kong
 
   ms-audit:
     build: ./ms-audit
