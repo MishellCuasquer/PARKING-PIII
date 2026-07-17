@@ -13,7 +13,9 @@
     "build:vehiculos": "npm run build --workspace=App/ms-vehiculos",
     "build:tickets": "npm run build --workspace=App/ms-tickets",
     "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "seed:vehiculos": "node scripts/seed-vehiculos.js",
+    "seed:tickets": "node scripts/seed-tickets.js"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

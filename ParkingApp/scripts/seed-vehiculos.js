@@ -10,7 +10,16 @@
  * Requiere Node 18+ (usa fetch nativo) y el stack levantado (docker compose up -d).
  */
 
-const TOTAL = Number(process.argv[2] || 500);
+// Acepta --count=N (estilo npm run seed:vehiculos -- --count=20) o un numero posicional
+function leerTotal() {
+  for (const arg of process.argv.slice(2)) {
+    const m = arg.match(/^--count=(\d+)$/);
+    if (m) return Number(m[1]);
+    if (/^\d+$/.test(arg)) return Number(arg);
+  }
+  return 500;
+}
+const TOTAL = leerTotal();
 const AUTH_URL = process.env.AUTH_URL || 'http://localhost:8080/api/oauth/token';
 const VEHICULOS_URL = process.env.VEHICULOS_URL || 'http://localhost:3000/vehiculos';
 const USERNAME = process.env.SEED_USER || 'admin';
