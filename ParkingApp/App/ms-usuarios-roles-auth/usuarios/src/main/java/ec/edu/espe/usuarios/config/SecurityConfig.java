@@ -56,6 +56,10 @@ public class SecurityConfig {
                                 "/api/validate-token"
                         ).permitAll()
 
+                        // Registro público: cualquiera puede crear su cuenta (queda con rol CLIENT)
+                        .requestMatchers(HttpMethod.POST, "/api/users")
+                        .permitAll()
+
                         // Usuarios y roles: solo ADMIN
                         .requestMatchers("/api/users/**", "/api/roles/**")
                         .hasRole("ADMIN")

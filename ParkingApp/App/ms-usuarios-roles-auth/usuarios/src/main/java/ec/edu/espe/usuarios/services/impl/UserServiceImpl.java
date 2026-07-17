@@ -132,6 +132,31 @@ public class UserServiceImpl implements UserService {
     }
 
 
+    // Elimina el usuario y su persona asociada. El admin semilla no se puede borrar.
+    @Override
+    public void deleteUser(UUID userId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Usuario no encontrado"));
+
+        if ("admin".equals(user.getUsername())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "No se puede eliminar la cuenta admin del sistema");
+        }
+
+        Person person = user.getPerson();
+        userRepository.delete(user);
+        if (person != null) {
+            personRepository.delete(person);
+        }
+
+        auditPublisher.publish("DELETE", "User", Map.of(
+                "id", userId,
+                CAMPO_USERNAME, user.getUsername()
+        ));
+    }
+
     @Override
     public UserResponse updateUser(UUID userId, UserUpdateRequest userRequest) {
 
