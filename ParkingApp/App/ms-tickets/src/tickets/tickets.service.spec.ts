@@ -7,6 +7,7 @@ import { Ticket } from './entities/ticket.entity';
 import { HttpClientService } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 import { EventPublisher } from '../common/event-publisher.service';
+import { CacheService } from '../common/cache.service';
 
 describe('TicketsService', () => {
   let service: TicketsService;
@@ -21,6 +22,7 @@ describe('TicketsService', () => {
   const httpClientMock = { get: jest.fn(), put: jest.fn() };
   const serviceTokenMock = { getServiceToken: jest.fn() };
   const publisherMock = { publishEvent: jest.fn() };
+  const cacheMock = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 
   const configValues: Record<string, string> = {
     MS_PERSONA: 'http://ms-personas/api/personas',
@@ -37,6 +39,7 @@ describe('TicketsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    cacheMock.get.mockResolvedValue(null);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TicketsService,
@@ -48,6 +51,7 @@ describe('TicketsService', () => {
         },
         { provide: ServiceTokenService, useValue: serviceTokenMock },
         { provide: EventPublisher, useValue: publisherMock },
+        { provide: CacheService, useValue: cacheMock },
       ],
     }).compile();
 

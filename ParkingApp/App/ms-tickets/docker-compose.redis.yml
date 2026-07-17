@@ -1,0 +1,18 @@
+# Redis para el caché de ms-tickets y ms-vehiculos (desarrollo local).
+# Levantar desde esta carpeta con: docker-compose -f docker-compose.redis.yml up -d
+# Nota: si el stack completo (ParkingApp/docker-compose.yml) ya está corriendo,
+# no hace falta este archivo porque ese stack ya incluye su propio Redis
+# en el mismo puerto 6379 (no levantar los dos a la vez).
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis-tickets
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:

@@ -4,6 +4,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { VehiculosService } from './vehiculos.service';
 import { Vehiculo } from './entities/vehiculo.entity';
 import { EventPublisher } from '../common/event-publisher.service';
+import { CacheService } from '../common/cache.service';
 
 describe('VehiculosService', () => {
   let service: VehiculosService;
@@ -15,6 +16,7 @@ describe('VehiculosService', () => {
     remove: jest.fn(),
   };
   const publisherMock = { publishEvent: jest.fn() };
+  const cacheMock = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 
   const createDto = {
     tipo: 'auto',
@@ -31,11 +33,13 @@ describe('VehiculosService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    cacheMock.get.mockResolvedValue(null);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         VehiculosService,
         { provide: getRepositoryToken(Vehiculo), useValue: repoMock },
         { provide: EventPublisher, useValue: publisherMock },
+        { provide: CacheService, useValue: cacheMock },
       ],
     }).compile();
 

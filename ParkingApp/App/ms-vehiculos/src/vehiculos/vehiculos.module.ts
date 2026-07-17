@@ -8,6 +8,7 @@ import { Motocicleta } from './entities/motocicleta.entity';
 import { Camioneta } from './entities/camioneta.entity';
 import { AuthModule } from '../auth/auth.module';
 import { EventPublisher } from '../common/event-publisher.service';
+import { CacheService } from '../common/cache.service';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { EventPublisher } from '../common/event-publisher.service';
     AuthModule,
   ],
   controllers: [VehiculosController],
-  providers: [VehiculosService, EventPublisher],
-  exports: [VehiculosService, EventPublisher],
+  providers: [VehiculosService, EventPublisher, CacheService],
+  exports: [VehiculosService, EventPublisher, CacheService],
 })
 export class VehiculosModule {}

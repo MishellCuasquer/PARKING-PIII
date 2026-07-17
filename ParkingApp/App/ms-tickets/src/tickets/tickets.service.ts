@@ -10,6 +10,7 @@ import { Espacio } from './interfaces/espacio.interface';
 import { HttpClientService } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 import { AuditEvent, EventPublisher } from '../common/event-publisher.service';
+import { CacheService } from '../common/cache.service';
 
 interface Vehiculo {
   placa: string;
@@ -38,6 +39,7 @@ export class TicketsService {
     private readonly configService: ConfigService,
     private readonly serviceTokenService: ServiceTokenService,
     private readonly eventPublisher: EventPublisher,
+    private readonly cacheService: CacheService,
   ) {
     this.personaUrl = this.configService.get<string>('MS_PERSONA', '');
     this.espacioUrl =
@@ -188,10 +190,18 @@ export class TicketsService {
   }
 
   private async validarPlaca(placa: string): Promise<Vehiculo | null> {
+    const cacheKey = `vehiculo:${placa}`;
+    const cached = await this.cacheService.get<Vehiculo>(cacheKey);
+    if (cached) return cached;
+
     try {
       const serviceToken = await this.serviceTokenService.getServiceToken();
       const url = `${this.vehiculosUrl}/placa/${encodeURIComponent(placa)}`;
-      return await this.httpClient.get<Vehiculo>(url, serviceToken);
+      const vehiculo = await this.httpClient.get<Vehiculo>(url, serviceToken);
+      if (vehiculo) {
+        await this.cacheService.set(cacheKey, vehiculo);
+      }
+      return vehiculo;
     } catch (error) {
       this.logger.error(`Error al validar placa ${placa}: ${error}`);
       return null;
@@ -203,8 +213,13 @@ export class TicketsService {
     authorization?: string,
   ): Promise<Espacio | null> {
     try {
-      const url = `${this.espacioUrl}/${idEspacio}`;
-      const espacio = await this.httpClient.get<EspacioApiResponse>(url, authorization);
+      const cacheKey = `espacio:${idEspacio}`;
+      let espacio = await this.cacheService.get<EspacioApiResponse>(cacheKey);
+      if (!espacio) {
+        const url = `${this.espacioUrl}/${idEspacio}`;
+        espacio = await this.httpClient.get<EspacioApiResponse>(url, authorization);
+        await this.cacheService.set(cacheKey, espacio);
+      }
       const espacioId = String(espacio.id);
 
       if (espacio.estado !== 'DISPONIBLE') {
@@ -292,5 +307,7 @@ export class TicketsService {
   ): Promise<void> {
     const url = `${this.espacioUrl}/${idEspacio}/estado?estado=${estado}`;
     await this.httpClient.put<Espacio>(url, authorization);
+    // El estado del espacio cambió: se invalida la copia en caché
+    await this.cacheService.del(`espacio:${idEspacio}`);
   }
 }

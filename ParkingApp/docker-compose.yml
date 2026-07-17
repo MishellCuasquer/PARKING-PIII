@@ -77,6 +77,21 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: parking-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   usuarios:
     build: ./App/ms-usuarios-roles-auth/usuarios
     container_name: parking-usuarios
@@ -135,12 +150,16 @@ services:
       RABBITMQ_PASSWORD: admin123
       RABBITMQ_EXCHANGE: exchange_audit
       RABBITMQ_ROUTING_KEY: routing_audit
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
     ports:
       - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   tickets:
@@ -161,6 +180,8 @@ services:
       RABBITMQ_PASSWORD: admin123
       RABBITMQ_EXCHANGE: exchange_audit
       RABBITMQ_ROUTING_KEY: routing_audit
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
     ports:
       - "3002:3002"
     depends_on:
@@ -170,6 +191,8 @@ services:
         condition: service_healthy
       usuarios:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   ms-audit:
     build: ./ms-audit
@@ -199,3 +222,4 @@ volumes:
   postgres_data:
   mysql_zonas_data:
   rabbitmq_data:
+  redis_data:

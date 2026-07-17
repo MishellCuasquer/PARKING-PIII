@@ -58,12 +58,18 @@ router.post('/bookings', verifyToken, async (req, res) => {
 
         const fechaFormateada = formatInTimeZone(fechaObj, 'America/Guayaquil', 'dd/MM/yyyy HH:mm');
 
-        await axios.post('http://notification-service:5002/notify/reserva', {
-            email,
-            nombre,
-            servicio,
-            fecha: fechaFormateada
-        });
+        // La notificación no debe bloquear la reserva: si el correo falla
+        // (p. ej. cuota de Mailtrap agotada), la reserva ya está guardada.
+        try {
+            await axios.post('http://notification-service:5002/notify/reserva', {
+                email,
+                nombre,
+                servicio,
+                fecha: fechaFormateada
+            });
+        } catch (notifError) {
+            console.error('No se pudo enviar el correo de reserva:', notifError.response?.data || notifError.message);
+        }
 
         res.status(201).json({ message: 'Reserva creada', reserva: nueva });
     } catch (error) {
@@ -99,12 +105,16 @@ router.put('/reservas/:id/cancelar', verifyToken, async (req, res) => {
 
         const fechaFormateada = formatInTimeZone(reserva.fecha, 'America/Guayaquil', 'dd/MM/yyyy HH:mm');
 
-        await axios.post('http://notification-service:5002/notify/cancelacion', {
-            email,
-            nombre,
-            servicio: reserva.servicio,
-            fecha: fechaFormateada
-        });
+        try {
+            await axios.post('http://notification-service:5002/notify/cancelacion', {
+                email,
+                nombre,
+                servicio: reserva.servicio,
+                fecha: fechaFormateada
+            });
+        } catch (notifError) {
+            console.error('No se pudo enviar el correo de cancelación:', notifError.response?.data || notifError.message);
+        }
 
         res.json({ message: 'Reserva cancelada correctamente' });
     } catch (error) {

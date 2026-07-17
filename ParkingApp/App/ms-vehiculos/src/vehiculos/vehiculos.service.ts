@@ -6,15 +6,17 @@ import { Vehiculo } from './entities/vehiculo.entity';
 import { Repository } from 'typeorm';
 import { FactoryVehiculos } from './factory/factory-vehiculos';
 import { AuditEvent, EventPublisher } from '../common/event-publisher.service';
+import { CacheService } from '../common/cache.service';
 
 @Injectable()
 export class VehiculosService {
- 
+
 
 constructor(
-  @InjectRepository(Vehiculo) 
+  @InjectRepository(Vehiculo)
   private vehiculoRepository: Repository<Vehiculo>,
-  private eventPublisher: EventPublisher
+  private eventPublisher: EventPublisher,
+  private cacheService: CacheService
 ) {}
 
 // Método auxiliar para publicar eventos
@@ -56,20 +58,31 @@ async create(createVehiculoDto: CreateVehiculoDto, userId?: string, ip?: string)
   }
 
   async findByPlaca(placa: string): Promise<Vehiculo> {
+    const cacheKey = `vehiculo:${placa}`;
+    const cached = await this.cacheService.get<Vehiculo>(cacheKey);
+    if (cached) return cached;
+
     const vehiculo = await this.vehiculoRepository.findOne({ where: { placa } });
     if (!vehiculo) {
       throw new NotFoundException(`Vehículo no encontrado con placa ${placa}`);
     }
+    await this.cacheService.set(cacheKey, vehiculo);
     return vehiculo;
   }
 
   async update(id: string, updateVehiculoDto: UpdateVehiculoDto, userId?: string, ip?: string): Promise<Vehiculo> {
     const vehiculo = await this.findOne(id);
+    const placaAnterior = vehiculo.placa;
     // Actualizar solo los campos proporcionados
     Object.assign(vehiculo, updateVehiculoDto);
     const updated = await this.vehiculoRepository.save(vehiculo);
     // Recargar el vehículo para obtener todos los campos correctamente
     const reloaded = await this.findOne(updated.id);
+    // Invalidar la caché (la placa pudo haber cambiado)
+    await this.cacheService.del(`vehiculo:${placaAnterior}`);
+    if (reloaded.placa !== placaAnterior) {
+      await this.cacheService.del(`vehiculo:${reloaded.placa}`);
+    }
     // Enviar solo los campos modificados en auditoría
     await this.emitEvent('UPDATE', reloaded, userId, ip, { camposModificados: updateVehiculoDto });
     return reloaded;
@@ -79,5 +92,6 @@ async create(createVehiculoDto: CreateVehiculoDto, userId?: string, ip?: string)
     const vehiculo = await this.findOne(id);
     await this.emitEvent('DELETE', vehiculo, userId, ip);
     await this.vehiculoRepository.remove(vehiculo);
+    await this.cacheService.del(`vehiculo:${vehiculo.placa}`);
   }
 }
