@@ -7,6 +7,7 @@ import { Ticket } from './entities/ticket.entity';
 import { HttpClientService } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 import { EventPublisher } from '../common/event-publisher.service';
+import { CacheService } from '../common/cache.service';
 
 describe('TicketsController', () => {
   let controller: TicketsController;
@@ -32,6 +33,10 @@ describe('TicketsController', () => {
         },
         { provide: ServiceTokenService, useValue: { getServiceToken: jest.fn() } },
         { provide: EventPublisher, useValue: { publishEvent: jest.fn() } },
+        {
+          provide: CacheService,
+          useValue: { get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn() },
+        },
       ],
     }).compile();
 
