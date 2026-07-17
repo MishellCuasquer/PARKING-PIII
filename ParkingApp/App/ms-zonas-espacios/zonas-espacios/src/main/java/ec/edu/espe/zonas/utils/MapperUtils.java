@@ -13,6 +13,19 @@ import java.time.LocalDateTime;
 
 @Component
 public class MapperUtils {
+
+    /**
+     * Nombre de un espacio a partir del código de su zona, con el segmento ESP
+     * para distinguirlo visualmente del código de la zona.
+     * Ejemplo: zona ZON-GEN-01, secuencia 3 -> ZON-GEN-ESP-01-003
+     */
+    public static String nombreEspacio(String codigoZona, int secuencia) {
+        int idx = codigoZona.lastIndexOf('-');
+        String base = idx > 0
+                ? codigoZona.substring(0, idx) + "-ESP" + codigoZona.substring(idx)
+                : codigoZona + "-ESP";
+        return base + "-" + String.format("%03d", secuencia);
+    }
     public ZonaResponseDto toZonaResponseDto(Zona objZona) {
         if  (objZona == null)
             return null;

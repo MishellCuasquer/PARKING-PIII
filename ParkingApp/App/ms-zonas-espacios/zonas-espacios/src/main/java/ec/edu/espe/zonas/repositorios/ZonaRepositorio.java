@@ -12,6 +12,7 @@ import java.util.UUID;
 
 public interface ZonaRepositorio extends JpaRepository<Zona, UUID> {
     boolean existsByNombre(String nombre);
+    boolean existsByCodigo(String codigo);
     long countByTipo(TipoZona tipo);
 
     // Devuelve la zona con bloqueo pesimista para evitar condiciones de carrera

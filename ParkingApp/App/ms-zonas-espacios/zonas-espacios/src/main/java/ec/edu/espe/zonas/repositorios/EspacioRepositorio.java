@@ -22,4 +22,6 @@ public interface EspacioRepositorio extends JpaRepository<Espacio, UUID> {
 
     long countByZonaIdAndEstado(UUID idZona, EstadoEspacio estado);
 
+    boolean existsByNombre(String nombre);
+
 }

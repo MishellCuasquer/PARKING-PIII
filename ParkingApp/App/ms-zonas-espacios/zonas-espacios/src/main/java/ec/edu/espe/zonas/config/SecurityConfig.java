@@ -65,6 +65,8 @@ public class SecurityConfig {
                         // PUT para estado y reservar
                         .requestMatchers(HttpMethod.PUT, "/api/espacios/*/estado", "/api/espacios/*/reservar")
                             .hasAnyRole("ADMIN", ROL_OPERATOR, "CLIENT", "SERVICE")
+                        // Crear espacios: solo ADMIN
+                        .requestMatchers(HttpMethod.POST, "/api/espacios").hasRole("ADMIN")
                         // Otros endpoints (POST, PUT) requieren rol ADMIN u OPERATOR
                         .requestMatchers("/api/zonas/**", "/api/espacios/**").hasAnyRole("ADMIN", ROL_OPERATOR)
                         .anyRequest().authenticated()

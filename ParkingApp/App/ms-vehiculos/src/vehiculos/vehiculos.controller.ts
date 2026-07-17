@@ -55,7 +55,7 @@ export class VehiculosController {
   }
 
   @Patch(':id')
-  @Roles('ADMIN', 'OPERATOR')
+  @Roles('ADMIN', 'OPERATOR', 'CLIENT')
   update(@Param('id') id: string, @Body() updateVehiculoDto: UpdateVehiculoDto, @Request() req) {
     const userId = req.user?.userId || 'system';
     const ip = req.headers['x-forwarded-for'] as string ||

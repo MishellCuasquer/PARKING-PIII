@@ -37,8 +37,6 @@ public class ServiciosZona implements ZonaServicio {
 
     private String generarCodigo(TipoZona tipo) {
 
-        long secuencia = zonaRepositorio.countByTipo(tipo) + 1;
-
         String prefijo = switch (tipo) {
             case VIP -> "ZON-VIP-";
             case VISITANTES -> "ZON-VIS-";
@@ -46,7 +44,16 @@ public class ServiciosZona implements ZonaServicio {
             case PREFERENCIAL -> "ZON-PRE-";
         };
 
-        return prefijo + String.format("%02d", secuencia);
+        // Se avanza hasta el primer código libre: contar zonas deja huecos al
+        // eliminar y provocaba códigos duplicados (violación de la restricción única)
+        long secuencia = zonaRepositorio.countByTipo(tipo) + 1;
+        String codigo = prefijo + String.format("%02d", secuencia);
+        while (zonaRepositorio.existsByCodigo(codigo)) {
+            secuencia++;
+            codigo = prefijo + String.format("%02d", secuencia);
+        }
+
+        return codigo;
     }
 
     @Override
@@ -89,7 +96,7 @@ public class ServiciosZona implements ZonaServicio {
             if (capacidad > 0) {
                 List<Espacio> nuevos = new ArrayList<>();
                 for (int i = 1; i <= capacidad; i++) {
-                    String nombreEspacio = zonaSaved.getCodigo() + "-" + String.format("%03d", i);
+                    String nombreEspacio = ec.edu.espe.zonas.utils.MapperUtils.nombreEspacio(zonaSaved.getCodigo(), i);
                     Espacio e = Espacio.builder()
                             .nombre(nombreEspacio)
                             .descripcion(null)
@@ -185,7 +192,7 @@ public class ServiciosZona implements ZonaServicio {
         List<Espacio> nuevos = new ArrayList<>();
         for (int i = 1; i <= capacidad; i++) {
             Espacio e = Espacio.builder()
-                    .nombre(zona.getCodigo() + "-" + String.format("%03d", i))
+                    .nombre(ec.edu.espe.zonas.utils.MapperUtils.nombreEspacio(zona.getCodigo(), i))
                     .descripcion(null)
                     .tipo(TipoEspacio.AUTO)
                     .estado(ec.edu.espe.zonas.entidades.EstadoEspacio.DISPONIBLE)

@@ -66,8 +66,14 @@ public class ServiciosEspacio implements EspacioServicio {
             throw new RuntimeException("La zona ha alcanzado su capacidad máxima de " + zona.getCapacidad() + " espacios");
         }
 
-        // Generar nombre del espacio: ZON-VIP-01-001 usando la secuencia segura
-        String nombreEspacio = generarNombreEspacio(zona, (int) cantidadActual + 1);
+        // Generar nombre del espacio: ZON-VIP-01-001. Se avanza hasta el primer
+        // nombre libre porque borrar espacios deja huecos y la secuencia por conteo se repetiría
+        int secuencia = (int) cantidadActual + 1;
+        String nombreEspacio = generarNombreEspacio(zona, secuencia);
+        while (espacioRepositorio.existsByNombre(nombreEspacio)) {
+            secuencia++;
+            nombreEspacio = generarNombreEspacio(zona, secuencia);
+        }
 
         // Crear nuevo espacio
         Espacio nuevoEspacio = Espacio.builder()
@@ -257,11 +263,10 @@ public class ServiciosEspacio implements EspacioServicio {
 
     /**
      * Genera el nombre/código del espacio automáticamente
-     * Ejemplo: ZON-VIP-01-001
-     * Formato: {CODIGO_ZONA}-{NUMERO_SECUENCIAL_ESPACIO}
+     * Ejemplo: ZON-VIP-ESP-01-001
+     * Formato: {PREFIJO_ZONA}-ESP-{NUMERO_ZONA}-{NUMERO_SECUENCIAL_ESPACIO}
      */
     private String generarNombreEspacio(Zona zona, int numeroSequencial) {
-        String numero = String.format("%03d", numeroSequencial);
-        return zona.getCodigo() + "-" + numero;
+        return ec.edu.espe.zonas.utils.MapperUtils.nombreEspacio(zona.getCodigo(), numeroSequencial);
     }
 }
