@@ -56,7 +56,7 @@ class ServiciosEspacioTest {
 
         EspacioResponseDto result = serviciosEspacio.crearEspacio(dto);
 
-        assertThat(result.getNombre()).isEqualTo("ZON-GEN-01-001");
+        assertThat(result.getNombre()).isEqualTo("ZON-GEN-ESP-01-001");
         verify(auditPublisher).publish(eq("CREATE"), eq("Espacio"), anyMap());
     }
 
@@ -76,7 +76,7 @@ class ServiciosEspacioTest {
     @Test
     void eliminarEspacio_eliminaYPublicaAuditoria() {
         UUID id = UUID.randomUUID();
-        Espacio espacio = Espacio.builder().id(id).nombre("ZON-GEN-01-001").build();
+        Espacio espacio = Espacio.builder().id(id).nombre("ZON-GEN-ESP-01-001").build();
         when(espacioRepositorio.findById(id)).thenReturn(Optional.of(espacio));
 
         serviciosEspacio.eliminarEspacio(id.toString());
