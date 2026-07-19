@@ -274,4 +274,94 @@ class UserServiceImplTest {
         assertThatThrownBy(() -> userService.updateUser(user.getId(), request))
                 .isInstanceOf(ResponseStatusException.class);
     }
+
+    @Test
+    void deleteUser_eliminaUsuarioYPersonaYPublicaAuditoria() {
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        userService.deleteUser(user.getId());
+
+        verify(userRepository).delete(user);
+        verify(personRepository).delete(person);
+        verify(auditPublisher).publish(org.mockito.ArgumentMatchers.eq("DELETE"),
+                org.mockito.ArgumentMatchers.eq("User"), anyMap());
+    }
+
+    @Test
+    void deleteUser_protegeLasCuentasAdminDelSistema() {
+        User admin = User.builder().id(UUID.randomUUID()).username("admin").person(person).build();
+        when(userRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> userService.deleteUser(admin.getId()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("409");
+    }
+
+    @Test
+    void deleteUser_lanzaNotFoundSiElUsuarioEsDeOtroTenant() {
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(callerContext.callerTenantId()).thenReturn(UUID.randomUUID());
+
+        assertThatThrownBy(() -> userService.deleteUser(user.getId()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
+    }
+
+    @Test
+    void createUser_lanzaBadRequestSiElTenantIdNoEsUuid() {
+        UserCreateRequest request = new UserCreateRequest();
+        request.setTenantId("no-es-uuid");
+
+        assertThatThrownBy(() -> userService.createUser(request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400");
+    }
+
+    @Test
+    void createUser_lanzaBadRequestSiElTenantEstaInactivo() {
+        Tenant inactivo = Tenant.builder().id(UUID.randomUUID()).nombre("Cerrado").codigo("CER").activo(false).build();
+        UserCreateRequest request = new UserCreateRequest();
+        request.setTenantId(inactivo.getId().toString());
+        when(tenantRepository.findById(inactivo.getId())).thenReturn(Optional.of(inactivo));
+
+        assertThatThrownBy(() -> userService.createUser(request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400");
+    }
+
+    @Test
+    void createUser_heredaElTenantDelAdminQueLoCrea() {
+        UserCreateRequest request = new UserCreateRequest();
+        request.setDni("2222222222");
+        request.setFirstName("Ana");
+        request.setLastName("Lopez");
+        request.setEmail("ana@test.com");
+        request.setPhone("0988888888");
+        // sin tenantId en el request: hereda el del ADMIN autenticado
+
+        when(callerContext.callerTenantId()).thenReturn(tenant.getId());
+        when(tenantRepository.findById(tenant.getId())).thenReturn(Optional.of(tenant));
+        when(personRepository.existsByEmailAndTenant_Id(request.getEmail(), tenant.getId())).thenReturn(false);
+        when(personRepository.existsByDniAndTenant_Id(request.getDni(), tenant.getId())).thenReturn(false);
+        when(personRepository.save(any(Person.class))).thenReturn(person);
+        when(roleRepository.findByName("CLIENT")).thenReturn(Optional.of(clientRole));
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed");
+        when(userRepository.save(any(User.class))).thenReturn(user);
+
+        UserResponse response = userService.createUser(request);
+
+        assertThat(response.getTenantId()).isEqualTo(tenant.getId());
+    }
+
+    @Test
+    void getUsers_adminDeEmpresaSoloVeSuTenant() {
+        when(callerContext.callerTenantId()).thenReturn(tenant.getId());
+        when(userRepository.findByPerson_Tenant_Id(tenant.getId())).thenReturn(java.util.List.of(user));
+
+        var result = userService.getUsers();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getTenantNombre()).isEqualTo("Parqueadero Test");
+        verify(userRepository).findByPerson_Tenant_Id(tenant.getId());
+    }
 }

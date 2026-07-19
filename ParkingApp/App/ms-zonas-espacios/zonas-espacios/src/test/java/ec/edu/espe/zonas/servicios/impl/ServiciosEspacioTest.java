@@ -9,13 +9,18 @@ import ec.edu.espe.zonas.entidades.TipoEspacio;
 import ec.edu.espe.zonas.entidades.Zona;
 import ec.edu.espe.zonas.repositorios.EspacioRepositorio;
 import ec.edu.espe.zonas.repositorios.ZonaRepositorio;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -138,5 +143,123 @@ class ServiciosEspacioTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getNombre()).isEqualTo("E1");
+    }
+
+    // ---- Aislamiento por tenant (simula un JWT con claim tenantId) ----
+
+    private UUID autenticarConTenant() {
+        UUID tenantId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .claim("tenantId", tenantId.toString())
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        return tenantId;
+    }
+
+    @AfterEach
+    void limpiarContexto() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void obtenerEspacios_conTenantSoloConsultaLosDelTenant() {
+        UUID tenantId = autenticarConTenant();
+        Espacio espacio = Espacio.builder().id(UUID.randomUUID()).nombre("E1")
+                .estado(EstadoEspacio.DISPONIBLE).idTenant(tenantId).build();
+        when(espacioRepositorio.findByIdTenant(tenantId)).thenReturn(List.of(espacio));
+
+        List<EspacioResponseDto> result = serviciosEspacio.obtenerEspacios();
+
+        assertThat(result).hasSize(1);
+        verify(espacioRepositorio).findByIdTenant(tenantId);
+    }
+
+    @Test
+    void obtenerEspacio_deOtroTenantSeReportaComoNoEncontrado() {
+        autenticarConTenant();
+        UUID id = UUID.randomUUID();
+        Espacio ajeno = Espacio.builder().id(id).nombre("E1").idTenant(UUID.randomUUID()).build();
+        when(espacioRepositorio.findById(id)).thenReturn(Optional.of(ajeno));
+
+        assertThatThrownBy(() -> serviciosEspacio.obtenerEspacio(id))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("no encontrado");
+    }
+
+    @Test
+    void crearEspacio_lanzaSiLaZonaPerteneceAOtroTenant() {
+        autenticarConTenant();
+        UUID idZona = UUID.randomUUID();
+        Zona zonaAjena = Zona.builder().id(idZona).codigo("ZON-GEN-01").capacidad(5)
+                .idTenant(UUID.randomUUID()).build();
+        EspacioRequestDto dto = new EspacioRequestDto(null, TipoEspacio.AUTO, idZona);
+        when(zonaRepositorio.findByIdForUpdate(idZona)).thenReturn(Optional.of(zonaAjena));
+
+        assertThatThrownBy(() -> serviciosEspacio.crearEspacio(dto))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Zona no encontrada");
+    }
+
+    @Test
+    void obtenerEspaciosPorEstado_conTenantFiltraPorTenant() {
+        UUID tenantId = autenticarConTenant();
+        Espacio espacio = Espacio.builder().id(UUID.randomUUID()).nombre("E1")
+                .estado(EstadoEspacio.DISPONIBLE).idTenant(tenantId).build();
+        when(espacioRepositorio.findByEstadoAndIdTenant(EstadoEspacio.DISPONIBLE, tenantId))
+                .thenReturn(List.of(espacio));
+
+        List<EspacioResponseDto> result = serviciosEspacio.obtenerEspaciosPorEstado("disponible");
+
+        assertThat(result).hasSize(1);
+        verify(espacioRepositorio).findByEstadoAndIdTenant(EstadoEspacio.DISPONIBLE, tenantId);
+    }
+
+    @Test
+    void obtenerEspaciosPorZonaEstado_devuelveVacioSiLaZonaEsDeOtroTenant() {
+        autenticarConTenant();
+        UUID idZona = UUID.randomUUID();
+        Zona zonaAjena = Zona.builder().id(idZona).idTenant(UUID.randomUUID()).build();
+        when(zonaRepositorio.findById(idZona)).thenReturn(Optional.of(zonaAjena));
+
+        List<EspacioResponseDto> result =
+                serviciosEspacio.obtenerEspaciosPorZonaEstado(idZona, "DISPONIBLE");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void obtenerEspaciosPorZonaEstado_devuelveLosEspaciosDeLaZonaPropia() {
+        UUID tenantId = autenticarConTenant();
+        UUID idZona = UUID.randomUUID();
+        Zona zonaPropia = Zona.builder().id(idZona).idTenant(tenantId).build();
+        Espacio espacio = Espacio.builder().id(UUID.randomUUID()).nombre("E1")
+                .estado(EstadoEspacio.DISPONIBLE).zona(zonaPropia).build();
+        when(zonaRepositorio.findById(idZona)).thenReturn(Optional.of(zonaPropia));
+        when(espacioRepositorio.findByZonaIdAndEstado(idZona, EstadoEspacio.DISPONIBLE))
+                .thenReturn(List.of(espacio));
+
+        List<EspacioResponseDto> result =
+                serviciosEspacio.obtenerEspaciosPorZonaEstado(idZona, "DISPONIBLE");
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void espaciosPorEstadoAgrupadosPorZona_agrupaPorNombreDeZona() {
+        UUID tenantId = autenticarConTenant();
+        Zona zona = Zona.builder().id(UUID.randomUUID()).nombre("Zona VIP").idTenant(tenantId).build();
+        Espacio e1 = Espacio.builder().id(UUID.randomUUID()).nombre("E1")
+                .estado(EstadoEspacio.DISPONIBLE).zona(zona).build();
+        Espacio e2 = Espacio.builder().id(UUID.randomUUID()).nombre("E2")
+                .estado(EstadoEspacio.DISPONIBLE).zona(zona).build();
+        when(espacioRepositorio.findByEstadoAndIdTenant(EstadoEspacio.DISPONIBLE, tenantId))
+                .thenReturn(List.of(e1, e2));
+
+        Map<String, List<EspacioResponseDto>> result =
+                serviciosEspacio.espaciosPorEstadoAgrupadosPorZona("DISPONIBLE");
+
+        assertThat(result).containsOnlyKeys("Zona VIP");
+        assertThat(result.get("Zona VIP")).hasSize(2);
     }
 }

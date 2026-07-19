@@ -4,7 +4,9 @@ import ec.edu.espe.usuarios.audit.AuditPublisher;
 import ec.edu.espe.usuarios.config.JwtConfig;
 import ec.edu.espe.usuarios.dto.request.LoginRequest;
 import ec.edu.espe.usuarios.dto.request.OAuthTokenRequest;
+import ec.edu.espe.usuarios.entity.Person;
 import ec.edu.espe.usuarios.entity.Role;
+import ec.edu.espe.usuarios.entity.Tenant;
 import ec.edu.espe.usuarios.entity.User;
 import ec.edu.espe.usuarios.repository.PersonRepository;
 import ec.edu.espe.usuarios.repository.UserRepository;
@@ -16,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
 import java.util.List;
@@ -164,6 +167,100 @@ class AuthServiceImplTest {
 
         assertThatThrownBy(() -> authService.logout("token-invalido"))
                 .isInstanceOf(BadCredentialsException.class);
+    }
+
+    // ---- Mismo dueño con cuenta en varias empresas ----
+
+    private Tenant tenantDe(String nombre, String codigo, boolean activo) {
+        return Tenant.builder().id(UUID.randomUUID()).nombre(nombre).codigo(codigo).activo(activo).build();
+    }
+
+    private Person personaDe(String email, String dni, Tenant tenant) {
+        return Person.builder().id(UUID.randomUUID()).email(email).dni(dni).tenant(tenant).build();
+    }
+
+    private User cuentaDe(String username, Person person) {
+        Role role = Role.builder().name("ADMIN").build();
+        return User.builder().id(person.getId()).username(username).role(role).person(person).build();
+    }
+
+    @Test
+    void misEmpresas_devuelveLasEmpresasConMismoEmailYDniFiltrandoInactivas() {
+        Tenant norte = tenantDe("Norte", "NORTE", true);
+        Tenant sur = tenantDe("Sur", "SUR", true);
+        Tenant cerrado = tenantDe("Cerrado", "CER", false);
+
+        Person pNorte = personaDe("nora@mail.com", "170001", norte);
+        Person pSur = personaDe("nora@mail.com", "170001", sur);
+        Person otraCedula = personaDe("nora@mail.com", "999999", sur);
+        Person pCerrado = personaDe("nora@mail.com", "170001", cerrado);
+
+        User caller = cuentaDe("nora_norte", pNorte);
+        User cuentaSur = cuentaDe("nora_sur", pSur);
+
+        when(userRepository.findByUsernameWithRole("nora_norte")).thenReturn(Optional.of(caller));
+        when(personRepository.findAllByEmail("nora@mail.com"))
+                .thenReturn(List.of(pNorte, pSur, otraCedula, pCerrado));
+        when(userRepository.findById(pNorte.getId())).thenReturn(Optional.of(caller));
+        when(userRepository.findById(pSur.getId())).thenReturn(Optional.of(cuentaSur));
+
+        var empresas = authService.misEmpresas("nora_norte");
+
+        assertThat(empresas).hasSize(2);
+        assertThat(empresas).filteredOn("actual", true)
+                .singleElement()
+                .extracting("tenantNombre").isEqualTo("Norte");
+        assertThat(empresas).extracting("tenantCodigo").containsExactlyInAnyOrder("NORTE", "SUR");
+    }
+
+    @Test
+    void misEmpresas_devuelveVacioParaCuentasGlobalesSinPerson() {
+        User superadmin = User.builder().id(UUID.randomUUID()).username("superadmin").build();
+        when(userRepository.findByUsernameWithRole("superadmin")).thenReturn(Optional.of(superadmin));
+
+        assertThat(authService.misEmpresas("superadmin")).isEmpty();
+    }
+
+    @Test
+    void cambiarEmpresa_emiteTokenParaLaCuentaDeLaOtraEmpresa() {
+        Tenant norte = tenantDe("Norte", "NORTE", true);
+        Tenant sur = tenantDe("Sur", "SUR", true);
+        Person pNorte = personaDe("nora@mail.com", "170001", norte);
+        Person pSur = personaDe("nora@mail.com", "170001", sur);
+        User caller = cuentaDe("nora_norte", pNorte);
+        User cuentaSur = cuentaDe("nora_sur", pSur);
+
+        when(userRepository.findByUsernameWithRole("nora_norte")).thenReturn(Optional.of(caller));
+        when(personRepository.findAllByEmail("nora@mail.com")).thenReturn(List.of(pNorte, pSur));
+        when(userRepository.findById(pNorte.getId())).thenReturn(Optional.of(caller));
+        when(userRepository.findById(pSur.getId())).thenReturn(Optional.of(cuentaSur));
+        when(userRepository.findByUsernameWithRole("nora_sur")).thenReturn(Optional.of(cuentaSur));
+        when(jwtConfig.generateToken(eq("nora_sur"), anyString(), any(), eq(sur.getId().toString())))
+                .thenReturn("token-sur");
+        when(jwtConfig.getExpirationTime()).thenReturn(3600000L);
+
+        var response = authService.cambiarEmpresa("nora_norte", sur.getId());
+
+        assertThat(response.getToken()).isEqualTo("token-sur");
+        assertThat(response.getTenantId()).isEqualTo(sur.getId().toString());
+        assertThat(response.getTenantNombre()).isEqualTo("Sur");
+        verify(auditPublisher).publish(eq("LOGIN"), eq("User"), anyMap(), eq("nora_sur"), eq(sur.getId().toString()));
+    }
+
+    @Test
+    void cambiarEmpresa_lanza404SiNoTieneCuentaEnEsaEmpresa() {
+        Tenant norte = tenantDe("Norte", "NORTE", true);
+        Person pNorte = personaDe("nora@mail.com", "170001", norte);
+        User caller = cuentaDe("nora_norte", pNorte);
+
+        when(userRepository.findByUsernameWithRole("nora_norte")).thenReturn(Optional.of(caller));
+        when(personRepository.findAllByEmail("nora@mail.com")).thenReturn(List.of(pNorte));
+        when(userRepository.findById(pNorte.getId())).thenReturn(Optional.of(caller));
+
+        UUID tenantAjeno = UUID.randomUUID();
+        assertThatThrownBy(() -> authService.cambiarEmpresa("nora_norte", tenantAjeno))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
     }
 
     @Test
