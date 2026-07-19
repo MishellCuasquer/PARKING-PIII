@@ -48,21 +48,32 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
 
-                        // Endpoints públicos
+                        // Endpoints públicos. /error debe ser público: si un controller lanza
+                        // una excepción en una petición anónima, Spring re-despacha a /error y
+                        // sin esto la respuesta se convierte en un 401 vacío en vez del error real
                         .requestMatchers(
                                 "/api/auth/login",
                                 "/api/oauth/token",
                                 "/api/oauth/introspect",
-                                "/api/validate-token"
+                                "/api/validate-token",
+                                "/error"
                         ).permitAll()
 
                         // Registro público: cualquiera puede crear su cuenta (queda con rol CLIENT)
                         .requestMatchers(HttpMethod.POST, "/api/users")
                         .permitAll()
 
-                        // Usuarios y roles: solo ADMIN
+                        // Selector de empresa del registro: público (solo tenants activos)
+                        .requestMatchers(HttpMethod.GET, "/api/tenants/publicos")
+                        .permitAll()
+
+                        // Gestión de tenants: solo el superadmin global
+                        .requestMatchers("/api/tenants/**")
+                        .hasRole("SUPER_ADMIN")
+
+                        // Usuarios y roles: ADMIN de cada empresa o el superadmin global
                         .requestMatchers("/api/users/**", "/api/roles/**")
-                        .hasRole("ADMIN")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
 
                         // Personas: crear
                         .requestMatchers(HttpMethod.POST, "/api/personas")

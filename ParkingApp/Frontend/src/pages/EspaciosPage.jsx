@@ -7,13 +7,14 @@ const ESTADOS = ['TODOS', 'DISPONIBLE', 'OCUPADO', 'RESERVADO'];
 const TIPOS_ESPACIO = ['AUTO', 'MOTO', 'BUSETA', 'BUS', 'CAMION'];
 
 export default function EspaciosPage() {
-  const { hasRole } = useAuth();
+  const { user, hasRole } = useAuth();
   const [espacios, setEspacios] = useState([]);
   const [zonas, setZonas] = useState([]);
   const [filtroEstado, setFiltroEstado] = useState('TODOS');
   const [filtroZona, setFiltroZona] = useState('TODAS');
   const [error, setError] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [sseActivo, setSseActivo] = useState(false);
   const [nuevo, setNuevo] = useState({ descripcion: '', tipo: 'AUTO', idZona: '' });
 
   const load = () =>
@@ -27,6 +28,26 @@ export default function EspaciosPage() {
   useEffect(() => {
     load();
   }, []);
+
+  // Panel en tiempo real vía SSE: cada cambio de espacio llega por el stream y
+  // refresca el panel. Los eventos traen idTenant: solo se atienden los de mi empresa.
+  useEffect(() => {
+    const source = new EventSource('/api/espacios/stream');
+    source.addEventListener('espacio', (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (!user?.tenantId || data.idTenant === user.tenantId) {
+          load();
+        }
+      } catch {
+        // evento con formato inesperado: se ignora
+      }
+    });
+    source.onopen = () => setSseActivo(true);
+    source.onerror = () => setSseActivo(false);
+    return () => source.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.tenantId]);
 
   const filtrados = useMemo(
     () =>
@@ -72,7 +93,10 @@ export default function EspaciosPage() {
       <header className="page-header">
         <div>
           <h1>Espacios</h1>
-          <p className="muted">Disponibilidad del parqueadero en tiempo real</p>
+          <p className="muted">
+            Disponibilidad del parqueadero en tiempo real{' '}
+            {sseActivo ? '· 🟢 conectado (SSE)' : '· ⚪ reconectando…'}
+          </p>
         </div>
       </header>
 

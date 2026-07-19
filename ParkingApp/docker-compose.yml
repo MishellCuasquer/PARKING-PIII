@@ -13,6 +13,11 @@ services:
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      # El DNS embebido de Docker responde SERVFAIL a las consultas SRV y Kong
+      # pierde ~4s por request reintentándolas (el SSE muere por timeout).
+      # Solo registros A/CNAME + cache de 60s = resolución instantánea.
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_DNS_VALID_TTL: "60"
     volumes:
       - ./App/kong.yml:/kong/kong.yml:ro
     ports:

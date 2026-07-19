@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { usersApi } from '../api/services';
+import { tenantsApi, usersApi } from '../api/services';
 import { ErrorMsg, SuccessMsg } from '../components/Feedback';
 
 const EMPTY = {
@@ -12,13 +12,22 @@ const EMPTY = {
   phone: '',
   address: '',
   nationality: '',
+  tenantId: '',
 };
 
 export default function RegisterPage() {
   const [form, setForm] = useState(EMPTY);
+  const [tenants, setTenants] = useState([]);
   const [error, setError] = useState(null);
   const [created, setCreated] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    tenantsApi
+      .publicList()
+      .then(setTenants)
+      .catch(() => setTenants([]));
+  }, []);
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -72,6 +81,19 @@ export default function RegisterPage() {
         </p>
 
         <div className="form-grid">
+          <label>
+            Empresa / Parqueadero *
+            <select value={form.tenantId} onChange={set('tenantId')} required>
+              <option value="" disabled>
+                Selecciona tu parqueadero
+              </option>
+              {tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             Cédula (DNI) *
             <input value={form.dni} onChange={set('dni')} maxLength={10} pattern="[0-9]+" required />

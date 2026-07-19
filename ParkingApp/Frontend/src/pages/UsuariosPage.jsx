@@ -15,8 +15,12 @@ const EMPTY = {
 };
 
 export default function UsuariosPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasRole } = useAuth();
+  // El SUPER_ADMIN (dueño de la plataforma) ve los usuarios de TODAS las
+  // empresas; el ADMIN solo recibe del backend los de su propia empresa
+  const esSuperAdmin = hasRole('SUPER_ADMIN');
   const [usuarios, setUsuarios] = useState([]);
+  const [filtroEmpresa, setFiltroEmpresa] = useState('TODAS');
   const [roles, setRoles] = useState([]);
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState(null);
@@ -68,6 +72,13 @@ export default function UsuariosPage() {
       setError(err.message);
     }
   };
+
+  const empresas = [...new Set(usuarios.map((u) => u.tenantNombre).filter(Boolean))];
+  const usuariosFiltrados = usuarios.filter((u) => {
+    if (!esSuperAdmin || filtroEmpresa === 'TODAS') return true;
+    if (filtroEmpresa === 'GLOBAL') return !u.tenantNombre;
+    return u.tenantNombre === filtroEmpresa;
+  });
 
   const handleAssignRole = async (userId, roleId) => {
     if (!roleId) return;
@@ -140,7 +151,23 @@ export default function UsuariosPage() {
       </div>
 
       <div className="card">
-        <h3>Usuarios registrados ({usuarios.length})</h3>
+        <h3>Usuarios registrados ({usuariosFiltrados.length})</h3>
+        {esSuperAdmin && (
+          <div className="filter-bar">
+            <label>
+              Empresa
+              <select value={filtroEmpresa} onChange={(e) => setFiltroEmpresa(e.target.value)}>
+                <option value="TODAS">TODAS</option>
+                <option value="GLOBAL">Globales (sin empresa)</option>
+                {empresas.map((nombre) => (
+                  <option key={nombre} value={nombre}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
         <div className="table-wrap">
           <table>
             <thead>
@@ -149,6 +176,7 @@ export default function UsuariosPage() {
                 <th>Nombre</th>
                 <th>Cédula</th>
                 <th>Email</th>
+                {esSuperAdmin && <th>Empresa</th>}
                 <th>Roles</th>
                 <th>Activo</th>
                 <th>Asignar rol</th>
@@ -156,7 +184,7 @@ export default function UsuariosPage() {
               </tr>
             </thead>
             <tbody>
-              {usuarios.map((u) => (
+              {usuariosFiltrados.map((u) => (
                 <tr key={u.id}>
                   <td>{u.username}</td>
                   <td>
@@ -164,6 +192,7 @@ export default function UsuariosPage() {
                   </td>
                   <td>{u.person?.dni || '—'}</td>
                   <td>{u.person?.email || '—'}</td>
+                  {esSuperAdmin && <td>{u.tenantNombre || '—'}</td>}
                   <td>{(u.roles || []).join(', ')}</td>
                   <td>{u.active ? 'Sí' : 'No'}</td>
                   <td>
@@ -185,9 +214,9 @@ export default function UsuariosPage() {
                   </td>
                 </tr>
               ))}
-              {usuarios.length === 0 && (
+              {usuariosFiltrados.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="muted center">
+                  <td colSpan={esSuperAdmin ? 9 : 8} className="muted center">
                     No hay usuarios registrados
                   </td>
                 </tr>

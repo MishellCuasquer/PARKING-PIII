@@ -8,7 +8,9 @@ import ec.edu.espe.usuarios.dto.response.UserResponse;
 import ec.edu.espe.usuarios.entity.*;
 import ec.edu.espe.usuarios.repository.PersonRepository;
 import ec.edu.espe.usuarios.repository.RoleRepository;
+import ec.edu.espe.usuarios.repository.TenantRepository;
 import ec.edu.espe.usuarios.repository.UserRepository;
+import ec.edu.espe.usuarios.security.CallerContext;
 import ec.edu.espe.usuarios.services.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -33,17 +35,21 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PersonRepository personRepository;
     private final RoleRepository roleRepository;
+    private final TenantRepository tenantRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditPublisher auditPublisher;
+    private final CallerContext callerContext;
 
     @Override
     public UserResponse createUser(UserCreateRequest userRequest) {
 
-        // Validaciones de unicidad
-        if (personRepository.existsByEmail(userRequest.getEmail())) {
+        Tenant tenant = resolveTenantForNewUser(userRequest.getTenantId());
+
+        // Validaciones de unicidad dentro del tenant
+        if (personRepository.existsByEmailAndTenant_Id(userRequest.getEmail(), tenant.getId())) {
             throw new IllegalArgumentException("El email ya existe");
         }
-        if (personRepository.existsByDni(userRequest.getDni())) {
+        if (personRepository.existsByDniAndTenant_Id(userRequest.getDni(), tenant.getId())) {
             throw new IllegalArgumentException("La identificación DNI ya existe");
         }
 
@@ -57,6 +63,7 @@ public class UserServiceImpl implements UserService {
                 .phone(userRequest.getPhone())
                 .address(userRequest.getAddress())
                 .nationality(nullToEmpty(userRequest.getNationality()))
+                .tenant(tenant)
                 .build();
 
         person = personRepository.save(person);
@@ -79,7 +86,7 @@ public class UserServiceImpl implements UserService {
         auditPublisher.publish("CREATE", "User", Map.of(
                 "id", savedUser.getId(),
                 CAMPO_USERNAME, savedUser.getUsername()
-        ));
+        ), savedUser.getUsername(), tenant.getId().toString());
 
         return mapToUserResponse(savedUser);
     }
@@ -88,7 +95,13 @@ public class UserServiceImpl implements UserService {
     @Transactional (readOnly = true)
     public List<UserResponse> getUsers() {
 
-        return userRepository.findAll().stream()
+        // ADMIN de empresa solo ve su tenant; SUPER_ADMIN (sin tenant) ve todos
+        UUID callerTenantId = callerTenantId();
+        List<User> users = callerTenantId != null
+                ? userRepository.findByPerson_Tenant_Id(callerTenantId)
+                : userRepository.findAll();
+
+        return users.stream()
                 .map(this::mapToUserResponse)
                 .collect(Collectors.toList()
         );
@@ -99,6 +112,7 @@ public class UserServiceImpl implements UserService {
         public UserResponse getUserById(UUID id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado con ID: " + id));
+        assertSameTenantAsCaller(user);
         return mapToUserResponse(user);
     }
 
@@ -109,6 +123,7 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Usuario no encontrado"));
+        assertSameTenantAsCaller(user);
 
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -139,8 +154,9 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Usuario no encontrado"));
+        assertSameTenantAsCaller(user);
 
-        if ("admin".equals(user.getUsername())) {
+        if ("admin".equals(user.getUsername()) || "superadmin".equals(user.getUsername())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "No se puede eliminar la cuenta admin del sistema");
         }
@@ -163,17 +179,26 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Usuario no encontrado"));
+        assertSameTenantAsCaller(user);
 
         Person person = user.getPerson();
+        UUID tenantId = person.getTenant() != null ? person.getTenant().getId() : null;
 
-        personRepository.findByEmail(userRequest.getEmail())
+        // Unicidad por tenant (cuentas sin tenant validan global)
+        var emailOwner = tenantId != null
+                ? personRepository.findByEmailAndTenant_Id(userRequest.getEmail(), tenantId)
+                : personRepository.findByEmail(userRequest.getEmail());
+        emailOwner
                 .filter(existing -> !existing.getId().equals(person.getId()))
                 .ifPresent(existing -> {
                     throw new ResponseStatusException(HttpStatus.CONFLICT, "El email ya está en uso");
                 });
 
         if (userRequest.getPhone() != null && !userRequest.getPhone().isBlank()) {
-            personRepository.findByPhone(userRequest.getPhone())
+            var phoneOwner = tenantId != null
+                    ? personRepository.findByPhoneAndTenant_Id(userRequest.getPhone(), tenantId)
+                    : personRepository.findByPhone(userRequest.getPhone());
+            phoneOwner
                     .filter(existing -> !existing.getId().equals(person.getId()))
                     .ifPresent(existing -> {
                         throw new ResponseStatusException(HttpStatus.CONFLICT, "El teléfono ya está en uso");
@@ -219,6 +244,8 @@ public class UserServiceImpl implements UserService {
                 .active(person.getActive())
                 .build();
 
+        Tenant tenant = person.getTenant();
+
         return UserResponse.builder()
                 .id(user.getId())
                 .username(user.getUsername())
@@ -227,11 +254,64 @@ public class UserServiceImpl implements UserService {
                 .createdAt(user.getCreatedAt())
                 .person(personResponse)
                 .roles(roles)
+                .tenantId(tenant != null ? tenant.getId() : null)
+                .tenantNombre(tenant != null ? tenant.getNombre() : null)
                 .build();
     }
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * Resuelve el tenant de un usuario nuevo:
+     * - Si el request trae tenantId, debe existir y estar activo.
+     * - Si no lo trae y el caller (ADMIN de empresa) tiene tenant, hereda el del caller.
+     * - Registro anónimo sin tenantId → 400 (el selector del frontend siempre lo envía).
+     */
+    private Tenant resolveTenantForNewUser(String requestTenantId) {
+        if (requestTenantId != null && !requestTenantId.isBlank()) {
+            UUID tenantId;
+            try {
+                tenantId = UUID.fromString(requestTenantId);
+            } catch (IllegalArgumentException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tenantId inválido");
+            }
+            Tenant tenant = tenantRepository.findById(tenantId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "El tenant no existe"));
+            if (Boolean.FALSE.equals(tenant.getActivo())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El tenant no está activo");
+            }
+            return tenant;
+        }
+
+        UUID callerTenantId = callerTenantId();
+        if (callerTenantId != null) {
+            return tenantRepository.findById(callerTenantId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "El tenant del solicitante no existe"));
+        }
+
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Debe indicar la empresa (tenantId) a la que se registra el usuario");
+    }
+
+    // Tenant del usuario autenticado; null si es anónimo o una cuenta global (superadmin/service)
+    private UUID callerTenantId() {
+        return callerContext.callerTenantId();
+    }
+
+    // Aislamiento: un ADMIN de empresa no puede operar sobre usuarios de otro tenant (404 para no filtrar existencia)
+    private void assertSameTenantAsCaller(User target) {
+        UUID callerTenantId = callerTenantId();
+        if (callerTenantId == null) {
+            return; // SUPER_ADMIN u otra cuenta global: acceso total
+        }
+        UUID targetTenantId = target.getPerson() != null && target.getPerson().getTenant() != null
+                ? target.getPerson().getTenant().getId()
+                : null;
+        if (!callerTenantId.equals(targetTenantId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuario no encontrado");
+        }
     }
 
     private String generarUsername(String fn, String mn, String ln) {

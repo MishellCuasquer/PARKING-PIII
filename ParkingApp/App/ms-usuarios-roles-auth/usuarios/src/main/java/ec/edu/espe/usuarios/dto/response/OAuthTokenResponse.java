@@ -29,4 +29,7 @@ public class OAuthTokenResponse {
     private String username;
 
     private List<String> roles;
+
+    @JsonProperty("tenant_id")
+    private String tenantId;
 }

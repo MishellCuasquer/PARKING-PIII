@@ -4,11 +4,13 @@ import ec.edu.espe.zonas.dto.request.EspacioRequestDto;
 import ec.edu.espe.zonas.dto.response.EspacioResponseDto;
 import ec.edu.espe.zonas.entidades.EstadoEspacio;
 import ec.edu.espe.zonas.servicios.interfaz.EspacioServicio;
+import ec.edu.espe.zonas.sse.EspacioEventos;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,7 @@ import java.util.UUID;
 public class EspacioControlador {
 
     private final EspacioServicio espacioServicio;
+    private final EspacioEventos espacioEventos;
 
     /**
      * Obtiene el estado general de todos los espacios del parqueadero
@@ -28,6 +31,21 @@ public class EspacioControlador {
     @GetMapping
     public ResponseEntity<List<EspacioResponseDto>> obtenerEspacios() {
         return ResponseEntity.ok(espacioServicio.obtenerEspacios());
+    }
+
+    /**
+     * Stream SSE con los cambios de estado de espacios en tiempo real.
+     * Público (igual que el GET de lista); cada evento trae idTenant para
+     * que el cliente filtre su empresa.
+     * X-Accel-Buffering: no → Kong/nginx no bufferizan y los eventos llegan al instante.
+     * GET /api/espacios/stream
+     */
+    @GetMapping("/stream")
+    public ResponseEntity<SseEmitter> stream() {
+        return ResponseEntity.ok()
+                .header("X-Accel-Buffering", "no")
+                .header("Cache-Control", "no-cache")
+                .body(espacioEventos.suscribir());
     }
 
     /**

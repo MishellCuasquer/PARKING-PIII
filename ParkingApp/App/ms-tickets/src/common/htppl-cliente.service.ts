@@ -4,9 +4,9 @@ import { Injectable, Logger } from '@nestjs/common';
 export class HttpClientService {
   private readonly logger = new Logger(HttpClientService.name);
 
-  async get<T>(url: string, authHeader?: string): Promise<T> {
+  async get<T>(url: string, authHeader?: string, tenantId?: string | null): Promise<T> {
     const response = await fetch(url, {
-      headers: this.buildHeaders(authHeader),
+      headers: this.buildHeaders(authHeader, tenantId),
     });
     if (!response.ok) {
       this.logger.error(`GET ${url} failed: ${response.status} ${response.statusText}`);
@@ -39,12 +39,16 @@ export class HttpClientService {
     return response.json() as Promise<T>;
   }
 
-  private buildHeaders(authHeader?: string): Record<string, string> {
+  private buildHeaders(authHeader?: string, tenantId?: string | null): Record<string, string> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authHeader) {
       headers.Authorization = authHeader.startsWith('Bearer ')
         ? authHeader
         : `Bearer ${authHeader}`;
+    }
+    // Propaga el tenant del usuario original en llamadas con token de servicio
+    if (tenantId) {
+      headers['X-Tenant-Id'] = tenantId;
     }
     return headers;
   }

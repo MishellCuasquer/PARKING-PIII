@@ -4,6 +4,8 @@ import ec.edu.espe.usuarios.audit.AuditPublisher;
 import ec.edu.espe.usuarios.dto.response.PersonResponse;
 import ec.edu.espe.usuarios.entity.Person;
 import ec.edu.espe.usuarios.repository.PersonRepository;
+import ec.edu.espe.usuarios.repository.TenantRepository;
+import ec.edu.espe.usuarios.security.CallerContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -29,6 +31,10 @@ class PersonControllerTest {
 
     @Mock
     private PersonRepository personRepository;
+    @Mock
+    private TenantRepository tenantRepository;
+    @Mock
+    private CallerContext callerContext;
     @Mock
     private AuditPublisher auditPublisher;
 

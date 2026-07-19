@@ -1,8 +1,13 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 @Entity('Tickets')
 export class Ticket {
+
+    @ApiPropertyOptional({ description: 'Empresa/parqueadero dueño del ticket' })
+    @Index()
+    @Column({ type: 'uuid', nullable: true })
+    tenantId?: string | null;
     @ApiProperty({ example: '123e4567-e89b-12d3-a456-426614174000' })
     @PrimaryGeneratedColumn('uuid')
     id!: string;

@@ -9,6 +9,8 @@ import { CacheService } from '../common/cache.service';
 describe('VehiculosService', () => {
   let service: VehiculosService;
 
+  const TENANT = 'tenant-1';
+
   const repoMock = {
     findOne: jest.fn(),
     find: jest.fn(),
@@ -51,14 +53,17 @@ describe('VehiculosService', () => {
   });
 
   describe('create', () => {
-    it('guarda el vehículo y publica evento CREATE', async () => {
-      const saved = { id: '1', placa: 'ABC-1234' };
+    it('guarda el vehículo con el tenant y publica evento CREATE', async () => {
+      const saved = { id: '1', placa: 'ABC-1234', tenantId: TENANT };
       repoMock.findOne.mockResolvedValue(null);
       repoMock.save.mockResolvedValue(saved);
 
-      const result = await service.create(createDto, 'user1', '10.0.0.1');
+      const result = await service.create(createDto, TENANT, 'user1', '10.0.0.1');
 
       expect(result).toBe(saved);
+      expect(repoMock.save).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: TENANT }),
+      );
       expect(publisherMock.publishEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           servicio: 'ms-vehiculos',
@@ -66,25 +71,29 @@ describe('VehiculosService', () => {
           entidad: 'Vehiculo',
           usuario: 'user1',
           ip: '10.0.0.1',
+          tenantId: TENANT,
         }),
       );
     });
 
-    it('lanza ConflictException si la placa ya existe', async () => {
+    it('lanza ConflictException si la placa ya existe en el tenant', async () => {
       repoMock.findOne.mockResolvedValue({ id: '1', placa: 'ABC-1234' });
 
-      await expect(service.create(createDto)).rejects.toThrow(
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(
         ConflictException,
       );
       expect(repoMock.save).not.toHaveBeenCalled();
     });
   });
 
-  it('findAll devuelve todos los vehículos', async () => {
+  it('findAll devuelve solo los vehículos del tenant', async () => {
     const vehiculos = [{ id: '1' }, { id: '2' }];
     repoMock.find.mockResolvedValue(vehiculos);
 
-    await expect(service.findAll()).resolves.toBe(vehiculos);
+    await expect(service.findAll(TENANT)).resolves.toBe(vehiculos);
+    expect(repoMock.find).toHaveBeenCalledWith({
+      where: { tenantId: TENANT },
+    });
   });
 
   describe('findOne', () => {
@@ -92,31 +101,44 @@ describe('VehiculosService', () => {
       const vehiculo = { id: '1' };
       repoMock.findOne.mockResolvedValue(vehiculo);
 
-      await expect(service.findOne('1')).resolves.toBe(vehiculo);
+      await expect(service.findOne('1', TENANT)).resolves.toBe(vehiculo);
     });
 
     it('lanza NotFoundException cuando no existe', async () => {
       repoMock.findOne.mockResolvedValue(null);
 
-      await expect(service.findOne('nope')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('nope', TENANT)).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('findByPlaca', () => {
-    it('devuelve el vehículo cuando existe', async () => {
+    it('devuelve el vehículo cuando existe en el tenant', async () => {
       const vehiculo = { id: '1', placa: 'ABC-1234' };
       repoMock.findOne.mockResolvedValue(vehiculo);
 
-      await expect(service.findByPlaca('ABC-1234')).resolves.toBe(vehiculo);
+      await expect(service.findByPlaca('ABC-1234', TENANT)).resolves.toBe(vehiculo);
       expect(repoMock.findOne).toHaveBeenCalledWith({
-        where: { placa: 'ABC-1234' },
+        where: { placa: 'ABC-1234', tenantId: TENANT },
       });
+    });
+
+    it('usa la clave de caché con namespace de tenant', async () => {
+      const vehiculo = { id: '1', placa: 'ABC-1234' };
+      repoMock.findOne.mockResolvedValue(vehiculo);
+
+      await service.findByPlaca('ABC-1234', TENANT);
+
+      expect(cacheMock.get).toHaveBeenCalledWith(`t:${TENANT}:vehiculo:ABC-1234`);
+      expect(cacheMock.set).toHaveBeenCalledWith(
+        `t:${TENANT}:vehiculo:ABC-1234`,
+        vehiculo,
+      );
     });
 
     it('lanza NotFoundException cuando no existe', async () => {
       repoMock.findOne.mockResolvedValue(null);
 
-      await expect(service.findByPlaca('ZZZ-9999')).rejects.toThrow(
+      await expect(service.findByPlaca('ZZZ-9999', TENANT)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -127,7 +149,7 @@ describe('VehiculosService', () => {
     repoMock.findOne.mockResolvedValue(vehiculo);
     repoMock.save.mockResolvedValue(vehiculo);
 
-    const result = await service.update('1', { color: 'Azul' } as any);
+    const result = await service.update('1', { color: 'Azul' } as any, TENANT);
 
     expect(repoMock.save).toHaveBeenCalled();
     expect(result).toBe(vehiculo);
@@ -140,7 +162,7 @@ describe('VehiculosService', () => {
     const vehiculo = { id: '1' };
     repoMock.findOne.mockResolvedValue(vehiculo);
 
-    await service.remove('1');
+    await service.remove('1', TENANT);
 
     expect(repoMock.remove).toHaveBeenCalledWith(vehiculo);
     expect(publisherMock.publishEvent).toHaveBeenCalledWith(

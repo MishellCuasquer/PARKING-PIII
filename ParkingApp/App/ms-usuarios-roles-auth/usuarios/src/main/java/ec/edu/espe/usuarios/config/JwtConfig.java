@@ -30,15 +30,22 @@ public class JwtConfig {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String generateToken(String username, String userId, List<String> roles) {
+    public String generateToken(String username, String userId, List<String> roles, String tenantId) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .issuer(issuer)
                 .subject(username)
                 .claim("userId", userId)
-                .claim("roles", roles)
+                .claim("roles", roles);
+
+        // superadmin y la cuenta service no tienen tenant: el claim se omite
+        if (tenantId != null) {
+            builder.claim("tenantId", tenantId);
+        }
+
+        return builder
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -59,6 +66,10 @@ public class JwtConfig {
 
     public String getUserIdFromToken(String token) {
         return parseClaims(token).get("userId", String.class);
+    }
+
+    public String getTenantIdFromToken(String token) {
+        return parseClaims(token).get("tenantId", String.class);
     }
 
     @SuppressWarnings("unchecked")

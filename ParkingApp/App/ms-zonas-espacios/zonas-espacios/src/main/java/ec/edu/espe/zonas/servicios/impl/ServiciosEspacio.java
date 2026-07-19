@@ -1,6 +1,7 @@
 package ec.edu.espe.zonas.servicios.impl;
 
 import ec.edu.espe.zonas.audit.AuditPublisher;
+import ec.edu.espe.zonas.config.TenantContext;
 import ec.edu.espe.zonas.dto.request.EspacioRequestDto;
 import ec.edu.espe.zonas.dto.response.EspacioResponseDto;
 import ec.edu.espe.zonas.entidades.Espacio;
@@ -9,6 +10,7 @@ import ec.edu.espe.zonas.entidades.Zona;
 import ec.edu.espe.zonas.repositorios.EspacioRepositorio;
 import ec.edu.espe.zonas.repositorios.ZonaRepositorio;
 import ec.edu.espe.zonas.servicios.interfaz.EspacioServicio;
+import ec.edu.espe.zonas.sse.EspacioEventos;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,16 +36,40 @@ public class ServiciosEspacio implements EspacioServicio {
     @Autowired
     private AuditPublisher auditPublisher;
 
+    // required=false + null-check: los tests unitarios instancian el servicio sin este bean
+    @Autowired(required = false)
+    private EspacioEventos espacioEventos;
+
+    private void emitirEventoSse(String accion, EspacioResponseDto dto, UUID idTenant) {
+        if (espacioEventos != null) {
+            espacioEventos.publicar(accion, dto, idTenant);
+        }
+    }
+
     /**
      * Obtiene el estado general de todos los espacios del parqueadero
      * Llama al repositorio, mapea a DTO y devuelve el listado
      */
     @Override
     public List<EspacioResponseDto> obtenerEspacios() {
-        List<Espacio> espacios = espacioRepositorio.findAll();
+        UUID tenantId = TenantContext.currentTenantId();
+        List<Espacio> espacios = tenantId != null
+                ? espacioRepositorio.findByIdTenant(tenantId)
+                : espacioRepositorio.findAll(); // anónimo (monitoreo) ve todo
         return espacios.stream()
                 .map(this::mapearEspacioADto)
                 .toList();
+    }
+
+    // Espacio de otro tenant → mismo error que si no existiera
+    private Espacio cargarEspacioDelTenant(UUID id) {
+        Espacio espacio = espacioRepositorio.findById(id)
+                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
+        UUID tenantId = TenantContext.currentTenantId();
+        if (tenantId != null && !tenantId.equals(espacio.getIdTenant())) {
+            throw new RuntimeException("Espacio no encontrado con id: " + id);
+        }
+        return espacio;
     }
 
     /**
@@ -59,6 +85,12 @@ public class ServiciosEspacio implements EspacioServicio {
         // Intentamos obtener la zona con bloqueo pesimista para evitar race conditions
         Zona zona = zonaRepositorio.findByIdForUpdate(idZona)
                 .orElseThrow(() -> new RuntimeException("Zona no encontrada con id: " + idZona));
+
+        // La zona debe pertenecer al tenant del caller
+        UUID tenantId = TenantContext.currentTenantId();
+        if (tenantId != null && !tenantId.equals(zona.getIdTenant())) {
+            throw new RuntimeException("Zona no encontrada con id: " + idZona);
+        }
 
         // Contar los espacios actuales de forma eficiente
         long cantidadActual = espacioRepositorio.countByZonaId(zona.getId());
@@ -82,6 +114,7 @@ public class ServiciosEspacio implements EspacioServicio {
                 .tipo(requestDto.getTipo())
                 .estado(EstadoEspacio.DISPONIBLE)
                 .zona(zona)
+                .idTenant(zona.getIdTenant())
                 .activo(true)
                 .fechaCreacion(LocalDateTime.now())
                 .build();
@@ -93,7 +126,9 @@ public class ServiciosEspacio implements EspacioServicio {
                 "nombre", espacioGuardado.getNombre()
         ));
 
-        return mapearEspacioADto(espacioGuardado);
+        EspacioResponseDto dto = mapearEspacioADto(espacioGuardado);
+        emitirEventoSse("CREATE", dto, espacioGuardado.getIdTenant());
+        return dto;
     }
 
     /**
@@ -115,15 +150,16 @@ public class ServiciosEspacio implements EspacioServicio {
     @Transactional
     public void eliminarEspacio(String id) {
         UUID uuid = UUID.fromString(id);
-        Espacio espacio = espacioRepositorio.findById(uuid)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
+        Espacio espacio = cargarEspacioDelTenant(uuid);
 
+        EspacioResponseDto dto = mapearEspacioADto(espacio);
         espacioRepositorio.delete(espacio);
 
         auditPublisher.publish("DELETE", ENTIDAD_ESPACIO, Map.of(
                 "id", uuid,
                 "nombre", espacio.getNombre()
         ));
+        emitirEventoSse("DELETE", dto, espacio.getIdTenant());
     }
 
     /**
@@ -131,9 +167,7 @@ public class ServiciosEspacio implements EspacioServicio {
      */
     @Override
     public EspacioResponseDto obtenerEspacio(UUID id) {
-        Espacio espacio = espacioRepositorio.findById(id)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
-        return mapearEspacioADto(espacio);
+        return mapearEspacioADto(cargarEspacioDelTenant(id));
     }
 
     /**
@@ -142,8 +176,7 @@ public class ServiciosEspacio implements EspacioServicio {
     @Override
     @Transactional
     public EspacioResponseDto cambiarEstado(UUID id, EstadoEspacio estado) {
-        Espacio espacio = espacioRepositorio.findById(id)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
+        Espacio espacio = cargarEspacioDelTenant(id);
 
         actualizarEstadoEspacio(espacio, estado);
         Espacio espacioActualizado = espacioRepositorio.save(espacio);
@@ -153,7 +186,9 @@ public class ServiciosEspacio implements EspacioServicio {
                 "estado", espacioActualizado.getEstado().name()
         ));
 
-        return mapearEspacioADto(espacioActualizado);
+        EspacioResponseDto dto = mapearEspacioADto(espacioActualizado);
+        emitirEventoSse("UPDATE", dto, espacioActualizado.getIdTenant());
+        return dto;
     }
 
     /**
@@ -162,8 +197,7 @@ public class ServiciosEspacio implements EspacioServicio {
     @Override
     @Transactional
     public EspacioResponseDto reservarEspacio(UUID id) {
-        Espacio espacio = espacioRepositorio.findById(id)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
+        Espacio espacio = cargarEspacioDelTenant(id);
 
         if (espacio.getEstado() != EstadoEspacio.DISPONIBLE) {
             throw new RuntimeException("Solo se pueden reservar espacios en estado DISPONIBLE");
@@ -177,7 +211,9 @@ public class ServiciosEspacio implements EspacioServicio {
                 "estado", espacioReservado.getEstado().name()
         ));
 
-        return mapearEspacioADto(espacioReservado);
+        EspacioResponseDto dto = mapearEspacioADto(espacioReservado);
+        emitirEventoSse("UPDATE", dto, espacioReservado.getIdTenant());
+        return dto;
     }
 
     /**
@@ -193,11 +229,7 @@ public class ServiciosEspacio implements EspacioServicio {
      */
     @Override
     public List<EspacioResponseDto> espacioporPorestado(String estado) {
-        EstadoEspacio estadoBuscado = EstadoEspacio.valueOf(estado.toUpperCase());
-        List<Espacio> espacios = espacioRepositorio.findByEstado(estadoBuscado);
-        return espacios.stream()
-                .map(this::mapearEspacioADto)
-                .toList();
+        return listarPorEstadoDelTenant(estado);
     }
 
     /**
@@ -205,8 +237,15 @@ public class ServiciosEspacio implements EspacioServicio {
      */
     @Override
     public List<EspacioResponseDto> obtenerEspaciosPorEstado(String estado) {
+        return listarPorEstadoDelTenant(estado);
+    }
+
+    private List<EspacioResponseDto> listarPorEstadoDelTenant(String estado) {
         EstadoEspacio estadoBuscado = EstadoEspacio.valueOf(estado.toUpperCase());
-        List<Espacio> espacios = espacioRepositorio.findByEstado(estadoBuscado);
+        UUID tenantId = TenantContext.currentTenantId();
+        List<Espacio> espacios = tenantId != null
+                ? espacioRepositorio.findByEstadoAndIdTenant(estadoBuscado, tenantId)
+                : espacioRepositorio.findByEstado(estadoBuscado);
         return espacios.stream()
                 .map(this::mapearEspacioADto)
                 .toList();
@@ -219,6 +258,14 @@ public class ServiciosEspacio implements EspacioServicio {
     @Override
     public List<EspacioResponseDto> obtenerEspaciosPorZonaEstado(UUID idZona, String estado) {
         EstadoEspacio estadoBuscado = EstadoEspacio.valueOf(estado.toUpperCase());
+        // La zona debe pertenecer al tenant del caller (si tiene)
+        UUID tenantId = TenantContext.currentTenantId();
+        if (tenantId != null) {
+            Zona zona = zonaRepositorio.findById(idZona).orElse(null);
+            if (zona == null || !tenantId.equals(zona.getIdTenant())) {
+                return List.of();
+            }
+        }
         List<Espacio> espacios = espacioRepositorio.findByZonaIdAndEstado(idZona, estadoBuscado);
         return espacios.stream()
                 .map(this::mapearEspacioADto)
@@ -234,7 +281,7 @@ public class ServiciosEspacio implements EspacioServicio {
         dto.setNombre(espacio.getNombre());
         dto.setDescripcion(espacio.getDescripcion());
         dto.setTipo(espacio.getZona() != null ? espacio.getZona().getTipo() : null);
-        dto.setEstado(espacio.getEstado().name());
+        dto.setEstado(espacio.getEstado() != null ? espacio.getEstado().name() : null);
         dto.setNombreZona(espacio.getZona() != null ? espacio.getZona().getNombre() : null);
         dto.setFechaCreacion(espacio.getFechaCreacion());
         dto.setFechaActualizacion(espacio.getFechaActualizacion());
@@ -248,7 +295,10 @@ public class ServiciosEspacio implements EspacioServicio {
     @Override
     public Map<String, List<EspacioResponseDto>> espaciosPorEstadoAgrupadosPorZona(String estado) {
         EstadoEspacio estadoBuscado = EstadoEspacio.valueOf(estado.toUpperCase());
-        List<Espacio> espacios = espacioRepositorio.findByEstado(estadoBuscado);
+        UUID tenantIdActual = TenantContext.currentTenantId();
+        List<Espacio> espacios = tenantIdActual != null
+                ? espacioRepositorio.findByEstadoAndIdTenant(estadoBuscado, tenantIdActual)
+                : espacioRepositorio.findByEstado(estadoBuscado);
 
         Map<String, List<EspacioResponseDto>> resultado = new HashMap<>();
 

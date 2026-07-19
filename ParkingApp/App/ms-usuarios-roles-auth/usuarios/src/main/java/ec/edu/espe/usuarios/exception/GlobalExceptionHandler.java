@@ -26,6 +26,14 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", "Unauthorized", "message", "Invalid credentials"));
     }
 
+    // Duplicados de negocio (email/DNI ya registrados en la empresa): 409 con
+    // mensaje genérico, sin exponer datos de otras empresas ni stacktrace
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "Conflict", "message", ex.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         Map<String, Object> body = new HashMap<>();

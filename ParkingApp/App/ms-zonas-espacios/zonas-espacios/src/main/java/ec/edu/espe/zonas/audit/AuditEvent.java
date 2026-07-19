@@ -9,6 +9,7 @@ public record AuditEvent(
         Map<String, Object> datos,
         String usuario,
         String ip,
-        String mac
+        String mac,
+        String tenantId
 ) {
 }

@@ -24,4 +24,11 @@ public interface EspacioRepositorio extends JpaRepository<Espacio, UUID> {
 
     boolean existsByNombre(String nombre);
 
+    // Variantes por tenant
+    List<Espacio> findByIdTenant(UUID idTenant);
+
+    List<Espacio> findByEstadoAndIdTenant(EstadoEspacio estado, UUID idTenant);
+
+    boolean existsByNombreAndIdTenant(String nombre, UUID idTenant);
+
 }

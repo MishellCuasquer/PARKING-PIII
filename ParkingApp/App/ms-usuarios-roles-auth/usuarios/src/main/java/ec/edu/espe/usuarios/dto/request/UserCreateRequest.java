@@ -33,4 +33,7 @@ public class UserCreateRequest {
 
     private String address;
     private String nationality;
+
+    // Tenant al que se registra el usuario; obligatorio en registro anónimo
+    private String tenantId;
 }

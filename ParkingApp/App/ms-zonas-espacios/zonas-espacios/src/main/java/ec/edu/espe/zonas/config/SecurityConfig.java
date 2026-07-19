@@ -56,6 +56,9 @@ public class SecurityConfig {
                         // Permitir acceso público para el monitoreo (solo GET list)
                         .requestMatchers(HttpMethod.GET, "/api/espacios").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/zonas").permitAll()
+                        // Stream SSE público (EventSource no puede enviar Authorization;
+                        // cada evento trae idTenant y el cliente filtra su empresa)
+                        .requestMatchers(HttpMethod.GET, "/api/espacios/stream").permitAll()
                         // DELETE requiere rol ADMIN u OPERATOR
                         .requestMatchers(HttpMethod.DELETE, "/api/zonas/**").hasAnyRole("ADMIN", ROL_OPERATOR)
                         .requestMatchers(HttpMethod.DELETE, "/api/espacios/**").hasAnyRole("ADMIN", ROL_OPERATOR)

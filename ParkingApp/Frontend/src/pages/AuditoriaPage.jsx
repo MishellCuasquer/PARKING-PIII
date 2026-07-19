@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auditApi } from '../api/services';
+import { auditApi, tenantsApi } from '../api/services';
+import { useAuth } from '../context/AuthContext';
 import { ErrorMsg } from '../components/Feedback';
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : '—');
@@ -11,7 +12,11 @@ const ACCION_BADGE = {
 };
 
 export default function AuditoriaPage() {
+  const { user, hasRole } = useAuth();
+  const esSuperAdmin = hasRole('SUPER_ADMIN');
   const [eventos, setEventos] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
+  const [filtroEmpresa, setFiltroEmpresa] = useState('TODAS');
   const [filtroServicio, setFiltroServicio] = useState('TODOS');
   const [filtroAccion, setFiltroAccion] = useState('TODAS');
   const [expandido, setExpandido] = useState(null);
@@ -29,13 +34,37 @@ export default function AuditoriaPage() {
 
   useEffect(() => {
     load();
-  }, []);
+    // El SUPER_ADMIN puede filtrar la auditoría por empresa
+    if (esSuperAdmin) {
+      tenantsApi
+        .list()
+        .then((ts) => setEmpresas(ts || []))
+        .catch(() => setEmpresas([]));
+    }
+  }, [esSuperAdmin]);
 
   const servicios = useMemo(() => [...new Set(eventos.map((e) => e.servicio))], [eventos]);
   const acciones = useMemo(() => [...new Set(eventos.map((e) => e.accion))], [eventos]);
+  const nombreEmpresa = useMemo(() => {
+    const map = {};
+    empresas.forEach((t) => {
+      map[t.id] = t.nombre;
+    });
+    return map;
+  }, [empresas]);
+
+  // El ADMIN de una empresa solo ve la auditoría de su tenant;
+  // SUPER_ADMIN ve todo y puede acotar por empresa (o solo eventos globales)
+  const filtraTenant = (e) => {
+    if (user?.tenantId) return e.tenantId === user.tenantId;
+    if (filtroEmpresa === 'TODAS') return true;
+    if (filtroEmpresa === 'GLOBAL') return !e.tenantId;
+    return e.tenantId === filtroEmpresa;
+  };
 
   const filtrados = eventos.filter(
     (e) =>
+      filtraTenant(e) &&
       (filtroServicio === 'TODOS' || e.servicio === filtroServicio) &&
       (filtroAccion === 'TODAS' || e.accion === filtroAccion),
   );
@@ -57,6 +86,20 @@ export default function AuditoriaPage() {
       <ErrorMsg error={error} />
 
       <div className="filter-bar">
+        {esSuperAdmin && (
+          <label>
+            Empresa
+            <select value={filtroEmpresa} onChange={(e) => setFiltroEmpresa(e.target.value)}>
+              <option value="TODAS">TODAS</option>
+              <option value="GLOBAL">Globales (sin empresa)</option>
+              {empresas.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           Servicio
           <select value={filtroServicio} onChange={(e) => setFiltroServicio(e.target.value)}>
@@ -88,6 +131,7 @@ export default function AuditoriaPage() {
                 <th>Acción</th>
                 <th>Entidad</th>
                 <th>Usuario</th>
+                <th>Empresa</th>
                 <th>IP</th>
                 <th>Datos</th>
               </tr>
@@ -102,6 +146,11 @@ export default function AuditoriaPage() {
                   </td>
                   <td>{e.entidad}</td>
                   <td>{e.usuario}</td>
+                  <td className="mono">
+                    {e.tenantId
+                      ? nombreEmpresa[e.tenantId] || `${e.tenantId.slice(0, 8)}…`
+                      : '—'}
+                  </td>
                   <td className="mono">{e.ip}</td>
                   <td>
                     <button
@@ -120,7 +169,7 @@ export default function AuditoriaPage() {
               ))}
               {filtrados.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted center">
+                  <td colSpan={8} className="muted center">
                     No hay eventos de auditoría
                   </td>
                 </tr>

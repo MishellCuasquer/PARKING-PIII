@@ -36,13 +36,18 @@ import { Roles } from '../auth/roles.decorator';
 export class TicketsController {
   constructor(private readonly ticketsService: TicketsService) {}
 
-  // CLIENT solo ve/opera sobre sus propios tickets; ADMIN/OPERATOR ven todos.
+  // CLIENT solo ve/opera sobre sus propios tickets; ADMIN/OPERATOR ven todos (de su tenant).
   private ownerFilter(req: any): string | undefined {
     const roles: string[] = req.user?.roles ?? [];
     if (roles.includes('ADMIN') || roles.includes('OPERATOR')) {
       return undefined;
     }
     return req.user?.userId;
+  }
+
+  // Tenant del token: todo el aislamiento de tickets se basa en este claim
+  private tenantId(req: any): string | null {
+    return req.user?.tenantId ?? null;
   }
 
   private clientIp(req: any): string {
@@ -64,21 +69,21 @@ export class TicketsController {
     @Request() req: any,
     @Headers('authorization') authorization?: string,
   ) {
-    return this.ticketsService.create(createTicketDto, authorization, req.user?.userId, this.clientIp(req));
+    return this.ticketsService.create(createTicketDto, this.tenantId(req), authorization, req.user?.userId, this.clientIp(req));
   }
 
   @Get()
   @Roles('ADMIN', 'OPERATOR', 'CLIENT')
   @ApiOperation({ summary: 'Listar todos los tickets' })
   findAll(@Request() req: any) {
-    return this.ticketsService.findAll(this.ownerFilter(req));
+    return this.ticketsService.findAll(this.tenantId(req), this.ownerFilter(req));
   }
 
   @Get('activos')
   @Roles('ADMIN', 'OPERATOR', 'CLIENT')
   @ApiOperation({ summary: 'Listar tickets activos' })
   findActivos(@Request() req: any) {
-    return this.ticketsService.findActivos(this.ownerFilter(req));
+    return this.ticketsService.findActivos(this.tenantId(req), this.ownerFilter(req));
   }
 
   @Get(':id')
@@ -86,7 +91,7 @@ export class TicketsController {
   @ApiOperation({ summary: 'Obtener un ticket por ID' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.ticketsService.findOne(id, this.ownerFilter(req));
+    return this.ticketsService.findOne(id, this.tenantId(req), this.ownerFilter(req));
   }
 
   @Patch(':id/cerrar')
@@ -101,6 +106,7 @@ export class TicketsController {
     return this.ticketsService.cerrarTicket(
       id,
       updateTicketDto,
+      this.tenantId(req),
       authorization,
       req.user?.userId,
       this.clientIp(req),
@@ -126,6 +132,6 @@ export class TicketsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Eliminar un ticket' })
   remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.ticketsService.remove(id, req.user?.userId, this.clientIp(req));
+    return this.ticketsService.remove(id, this.tenantId(req), req.user?.userId, this.clientIp(req));
   }
 }

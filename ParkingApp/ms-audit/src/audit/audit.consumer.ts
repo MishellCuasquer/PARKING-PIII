@@ -18,11 +18,20 @@ export class AuditConsumer implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.connect();
-    await this.consume();
+    await this.init();
   }
 
-  private async connect() {
+  // Conecta y configura el consumidor como una sola unidad: si la conexión
+  // falla (RabbitMQ aún arrancando), el reintento repite AMBOS pasos.
+  // Antes solo se reintentaba connect() y la cola nunca se creaba.
+  private async init() {
+    const connected = await this.connect();
+    if (connected) {
+      await this.consume();
+    }
+  }
+
+  private async connect(): Promise<boolean> {
     const host = this.configService.get('RABBITMQ_HOST');
     const port = this.configService.get('RABBITMQ_PORT');
     const user = this.configService.get('RABBITMQ_USER');
@@ -33,9 +42,11 @@ export class AuditConsumer implements OnModuleInit {
       this.connection = await amqp.connect(url);
       this.channel = await this.connection.createChannel();
       this.logger.log(`Connected to RabbitMQ at ${url}`);
+      return true;
     } catch (error) {
       this.logger.error(`Failed to connect to RabbitMQ at ${error}`);
-      setTimeout(() => this.connect(), 5000); // Retry after 5 seconds
+      setTimeout(() => this.init(), 5000); // Retry after 5 seconds
+      return false;
     }
   }
 

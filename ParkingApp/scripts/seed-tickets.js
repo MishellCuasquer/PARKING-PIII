@@ -14,6 +14,12 @@
  * Uso:  node scripts/seed-tickets.js --count=20
  *       npm run seed:tickets -- --count=20
  * Requiere Node 18+ (fetch nativo) y el stack levantado (docker compose up -d).
+ *
+ * Multitenant: todos los datos quedan en el tenant del usuario con el que se
+ * hace login (claim tenantId del JWT). Para sembrar otra empresa basta con
+ * usar el admin de esa empresa:
+ *   SEED_USER=adminNorte SEED_PASSWORD=claveNorte npm run seed:tickets
+ * El admin semilla (admin/admin123) pertenece al tenant "Parqueadero Default".
  */
 
 function leerCount() {

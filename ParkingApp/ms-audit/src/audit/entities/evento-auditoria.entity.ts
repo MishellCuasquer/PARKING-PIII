@@ -33,5 +33,9 @@ export class EventoAuditoria {
     @Column({ type: 'timestamp' })
     timestamp!: Date;  //ej. "2023-01-01T12:00:00Z"
 
+    // Empresa/parqueadero al que pertenece el evento; null en eventos de cuentas globales
+    @Column({ type: 'varchar', length: 50, nullable: true })
+    tenantId?: string;
+
 
 }

@@ -1,5 +1,6 @@
 package ec.edu.espe.usuarios.audit;
 
+import ec.edu.espe.usuarios.security.CallerContext;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -22,6 +24,7 @@ public class AuditPublisher {
     private static final String SERVICIO = "ms-usuarios";
 
     private final RabbitTemplate rabbitTemplate;
+    private final CallerContext callerContext;
 
     @Value("${audit.exchange:exchange_audit}")
     private String exchangeName;
@@ -30,13 +33,34 @@ public class AuditPublisher {
     private String routingKey;
 
     public void publish(String accion, String entidad, Map<String, Object> datos) {
+        publish(accion, entidad, datos, currentUser(), currentTenant());
+    }
+
+    /**
+     * Variante con usuario/tenant explícitos, para eventos donde el
+     * SecurityContext aún no existe (login, registro público): sin esto el
+     * evento saldría como "anonymousUser" sin empresa y el ADMIN del tenant
+     * no lo vería en su auditoría.
+     */
+    public void publish(String accion, String entidad, Map<String, Object> datos,
+                        String usuario, String tenantId) {
         AuditEvent event = new AuditEvent(
-                SERVICIO, accion, entidad, datos, currentUser(), currentIp(), "N/A"
+                SERVICIO, accion, entidad, datos, usuario, currentIp(), "N/A", tenantId
         );
         try {
             rabbitTemplate.convertAndSend(exchangeName, routingKey, event);
         } catch (Exception e) {
             log.error("Failed to publish audit event: {}", e.getMessage());
+        }
+    }
+
+    // Null para eventos de cuentas globales (superadmin/service) o anónimos (login)
+    private String currentTenant() {
+        try {
+            UUID tenantId = callerContext.callerTenantId();
+            return tenantId != null ? tenantId.toString() : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, IsNull, Repository } from 'typeorm';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { Ticket } from './entities/ticket.entity';
@@ -49,6 +49,11 @@ export class TicketsService {
     this.tarifaPorHora = Number(this.configService.get<string>('TARIFA_HORA', '1.0'));
   }
 
+  // tenantId null (datos legacy) se traduce a IS NULL en el where
+  private tenantWhere(tenantId?: string | null) {
+    return tenantId ?? IsNull();
+  }
+
   private async emitEvent(accion: string, ticket: Ticket, userId?: string, ip?: string, datosExtra?: any) {
     const event: AuditEvent = {
       servicio: 'ms-tickets',
@@ -58,64 +63,80 @@ export class TicketsService {
       usuario: userId || 'system',
       ip: ip || '127.0.0.1',
       mac: 'N/A',
+      tenantId: ticket.tenantId ?? undefined,
     };
     await this.eventPublisher.publishEvent(event);
   }
 
   async create(
     createTicketDto: CreateTicketDto,
+    tenantId: string | null,
     authorization?: string,
     emisorUserId?: string,
     ip?: string,
   ): Promise<Ticket> {
-    const persona = await this.validarPersona(createTicketDto.dni, authorization);
+    const persona = await this.validarPersona(createTicketDto.dni, tenantId, authorization);
     if (!persona) {
       throw new BadRequestException(`No se encontró una persona con DNI ${createTicketDto.dni}`);
     }
 
-    const vehiculo = await this.validarPlaca(createTicketDto.placa);
+    const vehiculo = await this.validarPlaca(createTicketDto.placa, tenantId);
     if (!vehiculo) {
       throw new BadRequestException(`No se encontró un vehículo con placa ${createTicketDto.placa}`);
     }
 
-    const espacio = await this.buscarEspacioDisponible(createTicketDto.idEspacio, authorization);
+    // ms-zonas valida con el token del usuario que el espacio sea de su tenant (ajeno → 404)
+    const espacio = await this.buscarEspacioDisponible(createTicketDto.idEspacio, tenantId, authorization);
     if (!espacio) {
       throw new BadRequestException(
         `No se encontró un espacio disponible con ID ${createTicketDto.idEspacio}`,
       );
     }
 
-    const ticketActivo = await this.validarTicketActivo(createTicketDto.placa);
+    const ticketActivo = await this.validarTicketActivo(createTicketDto.placa, tenantId);
     if (ticketActivo) {
       throw new BadRequestException(
         `El vehículo con placa ${createTicketDto.placa} ya tiene un ticket activo`,
       );
     }
 
-    const ticketGuardado = await this.emitirTicket(createTicketDto, espacio, authorization, emisorUserId);
+    const ticketGuardado = await this.emitirTicket(createTicketDto, espacio, tenantId, authorization, emisorUserId);
     this.logger.log(`Ticket creado con ID ${ticketGuardado.id} para placa ${createTicketDto.placa}`);
     await this.emitEvent('CREATE', ticketGuardado, emisorUserId, ip);
     return ticketGuardado;
   }
 
-  findAll(ownerUserId?: string): Promise<Ticket[]> {
+  findAll(tenantId: string | null, ownerUserId?: string): Promise<Ticket[]> {
+    const where: FindOptionsWhere<Ticket> = { tenantId: this.tenantWhere(tenantId) };
+    if (ownerUserId) {
+      where.emisorUserId = ownerUserId;
+    }
     return this.ticketRepository.find({
-      where: ownerUserId ? { emisorUserId: ownerUserId } : {},
+      where,
       order: { fechhaHoraIngreso: 'DESC' },
     });
   }
 
-  async findOne(id: string, ownerUserId?: string): Promise<Ticket> {
-    const ticket = await this.ticketRepository.findOne({ where: { id } });
+  async findOne(id: string, tenantId: string | null, ownerUserId?: string): Promise<Ticket> {
+    const ticket = await this.ticketRepository.findOne({
+      where: { id, tenantId: this.tenantWhere(tenantId) },
+    });
     if (!ticket || (ownerUserId && ticket.emisorUserId !== ownerUserId)) {
       throw new NotFoundException(`Ticket con id ${id} no encontrado`);
     }
     return ticket;
   }
 
-  async findActivos(ownerUserId?: string): Promise<Ticket[]> {
+  async findActivos(tenantId: string | null, ownerUserId?: string): Promise<Ticket[]> {
+    const where: FindOptionsWhere<Ticket> = {
+      activo: true,
+      tenantId: this.tenantWhere(tenantId),
+    };
+    if (ownerUserId) {
+      where.emisorUserId = ownerUserId;
+    }
     return this.ticketRepository.find({
-      where: ownerUserId ? { activo: true, emisorUserId: ownerUserId } : { activo: true },
+      where,
       order: { fechhaHoraIngreso: 'DESC' },
     });
   }
@@ -123,11 +144,12 @@ export class TicketsService {
   async cerrarTicket(
     id: string,
     updateTicketDto: UpdateTicketDto,
+    tenantId: string | null,
     authorization?: string,
     cobradorUserId?: string,
     ip?: string,
   ): Promise<Ticket> {
-    const ticket = await this.findOne(id);
+    const ticket = await this.findOne(id, tenantId);
 
     if (!ticket.activo) {
       throw new BadRequestException(`El ticket con id ${id} ya está cerrado`);
@@ -162,7 +184,7 @@ export class TicketsService {
     ticket.valorRecaudo = costo;
     ticket.cobradorUserId = cobradorUserId;
 
-    await this.actualizarEstadoEspacio(ticket.idEspacio, 'DISPONIBLE', authorization);
+    await this.actualizarEstadoEspacio(ticket.idEspacio, 'DISPONIBLE', tenantId, authorization);
 
     const closedTicket = await this.ticketRepository.save(ticket);
     this.logger.log(`Ticket con ID ${id} cerrado`);
@@ -173,31 +195,41 @@ export class TicketsService {
     return closedTicket;
   }
 
-  async remove(id: string, userId?: string, ip?: string): Promise<void> {
-    const ticket = await this.findOne(id);
+  async remove(id: string, tenantId: string | null, userId?: string, ip?: string): Promise<void> {
+    const ticket = await this.findOne(id, tenantId);
     await this.emitEvent('DELETE', ticket, userId, ip);
     await this.ticketRepository.remove(ticket);
   }
 
-  private async validarPersona(dni: string, authorization?: string): Promise<Persona | null> {
+  // La consulta a ms-usuarios es costosa: se cachea por tenant igual que vehículo/espacio
+  private async validarPersona(dni: string, tenantId: string | null, authorization?: string): Promise<Persona | null> {
+    const cacheKey = `t:${tenantId ?? 'global'}:persona:${dni}`;
+    const cached = await this.cacheService.get<Persona>(cacheKey);
+    if (cached) return cached;
+
     try {
       const url = `${this.personaUrl}/${dni}`;
-      return await this.httpClient.get<Persona>(url, authorization);
+      const persona = await this.httpClient.get<Persona>(url, authorization);
+      if (persona) {
+        await this.cacheService.set(cacheKey, persona);
+      }
+      return persona;
     } catch (error) {
       this.logger.error(`Error al validar persona ${dni}: ${error}`);
       return null;
     }
   }
 
-  private async validarPlaca(placa: string): Promise<Vehiculo | null> {
-    const cacheKey = `vehiculo:${placa}`;
+  private async validarPlaca(placa: string, tenantId: string | null): Promise<Vehiculo | null> {
+    const cacheKey = `t:${tenantId ?? 'global'}:vehiculo:${placa}`;
     const cached = await this.cacheService.get<Vehiculo>(cacheKey);
     if (cached) return cached;
 
     try {
       const serviceToken = await this.serviceTokenService.getServiceToken();
       const url = `${this.vehiculosUrl}/placa/${encodeURIComponent(placa)}`;
-      const vehiculo = await this.httpClient.get<Vehiculo>(url, serviceToken);
+      // El token de servicio no tiene tenant: se propaga el del usuario original por header
+      const vehiculo = await this.httpClient.get<Vehiculo>(url, serviceToken, tenantId);
       if (vehiculo) {
         await this.cacheService.set(cacheKey, vehiculo);
       }
@@ -210,10 +242,11 @@ export class TicketsService {
 
   private async buscarEspacioDisponible(
     idEspacio: string,
+    tenantId: string | null,
     authorization?: string,
   ): Promise<Espacio | null> {
     try {
-      const cacheKey = `espacio:${idEspacio}`;
+      const cacheKey = `t:${tenantId ?? 'global'}:espacio:${idEspacio}`;
       let espacio = await this.cacheService.get<EspacioApiResponse>(cacheKey);
       if (!espacio) {
         const url = `${this.espacioUrl}/${idEspacio}`;
@@ -241,9 +274,9 @@ export class TicketsService {
     }
   }
 
-  private async validarTicketActivo(placa: string): Promise<Ticket | null> {
+  private async validarTicketActivo(placa: string, tenantId: string | null): Promise<Ticket | null> {
     return this.ticketRepository.findOne({
-      where: { placa, activo: true },
+      where: { placa, activo: true, tenantId: this.tenantWhere(tenantId) },
     });
   }
 
@@ -276,10 +309,11 @@ export class TicketsService {
   private async emitirTicket(
     createTicketDto: CreateTicketDto,
     espacio: Espacio,
+    tenantId: string | null,
     authorization?: string,
     emisorUserId?: string,
   ): Promise<Ticket> {
-    await this.actualizarEstadoEspacio(createTicketDto.idEspacio, 'OCUPADO', authorization);
+    await this.actualizarEstadoEspacio(createTicketDto.idEspacio, 'OCUPADO', tenantId, authorization);
 
     const ticket = this.ticketRepository.create({
       placa: createTicketDto.placa,
@@ -290,12 +324,13 @@ export class TicketsService {
       activo: true,
       valorRecaudo: 0,
       emisorUserId,
+      tenantId,
     });
 
     try {
       return await this.ticketRepository.save(ticket);
     } catch (error) {
-      await this.actualizarEstadoEspacio(createTicketDto.idEspacio, 'DISPONIBLE', authorization);
+      await this.actualizarEstadoEspacio(createTicketDto.idEspacio, 'DISPONIBLE', tenantId, authorization);
       throw error;
     }
   }
@@ -303,11 +338,12 @@ export class TicketsService {
   private async actualizarEstadoEspacio(
     idEspacio: string,
     estado: string,
+    tenantId: string | null,
     authorization?: string,
   ): Promise<void> {
     const url = `${this.espacioUrl}/${idEspacio}/estado?estado=${estado}`;
     await this.httpClient.put<Espacio>(url, authorization);
     // El estado del espacio cambió: se invalida la copia en caché
-    await this.cacheService.del(`espacio:${idEspacio}`);
+    await this.cacheService.del(`t:${tenantId ?? 'global'}:espacio:${idEspacio}`);
   }
 }

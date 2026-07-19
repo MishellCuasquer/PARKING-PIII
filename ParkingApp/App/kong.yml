@@ -11,16 +11,27 @@ services:
           - /api/oauth
           - /api/personas
           - /api/roles
+          - /api/tenants
         strip_path: false
 
   - name: ms-zonas-espacios
     url: http://zonas-espacios:8081
     routes:
+      # response_buffering: false en TODA la ruta: el stream SSE
+      # /api/espacios/stream comparte el prefijo /api/espacios y Kong a veces
+      # lo enruta por aquí; con buffering los eventos jamás llegan al cliente.
+      # Para las respuestas JSON normales desactivar el buffering es inocuo.
       - name: zonas-route
         paths:
           - /api/zonas
           - /api/espacios
         strip_path: false
+        response_buffering: false
+      - name: espacios-stream-route
+        paths:
+          - /api/espacios/stream
+        strip_path: false
+        response_buffering: false
 
   - name: ms-vehiculos
     url: http://vehiculos:3000

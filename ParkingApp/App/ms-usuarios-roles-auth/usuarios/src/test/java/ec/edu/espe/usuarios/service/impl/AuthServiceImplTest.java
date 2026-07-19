@@ -6,6 +6,7 @@ import ec.edu.espe.usuarios.dto.request.LoginRequest;
 import ec.edu.espe.usuarios.dto.request.OAuthTokenRequest;
 import ec.edu.espe.usuarios.entity.Role;
 import ec.edu.espe.usuarios.entity.User;
+import ec.edu.espe.usuarios.repository.PersonRepository;
 import ec.edu.espe.usuarios.repository.UserRepository;
 import ec.edu.espe.usuarios.security.TokenBlacklistService;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
 import java.util.List;
 import java.util.Map;
@@ -40,6 +42,8 @@ class AuthServiceImplTest {
     @Mock
     private UserRepository userRepository;
     @Mock
+    private PersonRepository personRepository;
+    @Mock
     private TokenBlacklistService tokenBlacklistService;
     @Mock
     private AuditPublisher auditPublisher;
@@ -56,7 +60,7 @@ class AuthServiceImplTest {
         request.setPassword("secret");
 
         when(userRepository.findByUsernameWithRole("jperez")).thenReturn(Optional.of(user));
-        when(jwtConfig.generateToken(eq("jperez"), anyString(), any())).thenReturn("token-123");
+        when(jwtConfig.generateToken(eq("jperez"), anyString(), any(), any())).thenReturn("token-123");
         when(jwtConfig.getExpirationTime()).thenReturn(3600000L);
 
         var response = authService.login(request);
@@ -64,7 +68,7 @@ class AuthServiceImplTest {
         assertThat(response.getToken()).isEqualTo("token-123");
         assertThat(response.getUsername()).isEqualTo("jperez");
         assertThat(response.getRoles()).containsExactly("CLIENT");
-        verify(auditPublisher).publish(eq("LOGIN"), eq("User"), anyMap());
+        verify(auditPublisher).publish(eq("LOGIN"), eq("User"), anyMap(), eq("jperez"), any());
     }
 
     @Test
@@ -72,6 +76,45 @@ class AuthServiceImplTest {
         LoginRequest request = new LoginRequest();
         request.setUsername("fantasma");
         request.setPassword("secret");
+
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void login_conCorreoPruebaCadaCuentaHastaQueLaContrasenaCoincide() {
+        Role role = Role.builder().name("ADMIN").build();
+        User cuentaNorte = User.builder().id(UUID.randomUUID()).username("dueno_norte").role(role).build();
+        User cuentaSur = User.builder().id(UUID.randomUUID()).username("dueno_sur").role(role).build();
+        LoginRequest request = new LoginRequest();
+        request.setUsername("dueno@mail.com");
+        request.setPassword("claveSur");
+
+        when(userRepository.findAllByPersonEmailWithRole("dueno@mail.com"))
+                .thenReturn(List.of(cuentaNorte, cuentaSur));
+        when(authenticationManager.authenticate(any())).thenAnswer(inv -> {
+            var auth = (UsernamePasswordAuthenticationToken) inv.getArgument(0);
+            if ("dueno_norte".equals(auth.getName())) {
+                throw new BadCredentialsException("bad");
+            }
+            return auth;
+        });
+        when(jwtConfig.generateToken(eq("dueno_sur"), anyString(), any(), any())).thenReturn("token-sur");
+        when(jwtConfig.getExpirationTime()).thenReturn(3600000L);
+
+        var response = authService.login(request);
+
+        assertThat(response.getToken()).isEqualTo("token-sur");
+        assertThat(response.getUsername()).isEqualTo("dueno_sur");
+    }
+
+    @Test
+    void login_conCorreoLanzaBadCredentialsSiNingunaCuentaCoincide() {
+        LoginRequest request = new LoginRequest();
+        request.setUsername("nadie@mail.com");
+        request.setPassword("clave");
+
+        when(userRepository.findAllByPersonEmailWithRole("nadie@mail.com")).thenReturn(List.of());
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class);
@@ -87,7 +130,7 @@ class AuthServiceImplTest {
         request.setPassword("secret");
 
         when(userRepository.findByUsernameWithRole("jperez")).thenReturn(Optional.of(user));
-        when(jwtConfig.generateToken(eq("jperez"), anyString(), any())).thenReturn("token-oauth");
+        when(jwtConfig.generateToken(eq("jperez"), anyString(), any(), any())).thenReturn("token-oauth");
         when(jwtConfig.getExpirationTime()).thenReturn(3600000L);
 
         var response = authService.oauthToken(request);

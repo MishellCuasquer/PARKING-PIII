@@ -155,4 +155,38 @@ describe('AuditConsumer', () => {
     jest.clearAllTimers();
     jest.useRealTimers();
   });
+
+  it('no intenta configurar el consumidor mientras no haya conexión', async () => {
+    jest.useFakeTimers();
+    (amqp.connect as jest.Mock).mockRejectedValueOnce(new Error('sin red'));
+
+    await consumer.onModuleInit();
+
+    expect(channelMock.assertExchange).not.toHaveBeenCalled();
+    expect(channelMock.consume).not.toHaveBeenCalled();
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
+  it('tras reconectar configura la cola y el consumidor completos', async () => {
+    jest.useFakeTimers();
+    (amqp.connect as jest.Mock).mockRejectedValueOnce(new Error('sin red'));
+
+    await consumer.onModuleInit();
+    expect(channelMock.consume).not.toHaveBeenCalled();
+
+    // el reintento debe repetir connect + consume (antes solo repetía connect)
+    await jest.advanceTimersByTimeAsync(5000);
+
+    expect(channelMock.assertQueue).toHaveBeenCalledWith('audit_queue', {
+      durable: true,
+      arguments: { 'x-dead-letter-exchange': 'events.dlx' },
+    });
+    expect(channelMock.consume).toHaveBeenCalledWith(
+      'audit_queue',
+      expect.any(Function),
+      { noAck: false },
+    );
+    jest.useRealTimers();
+  });
 });

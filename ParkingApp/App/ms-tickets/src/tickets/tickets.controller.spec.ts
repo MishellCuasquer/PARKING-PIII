@@ -13,8 +13,10 @@ describe('TicketsController', () => {
   let controller: TicketsController;
   let ticketsService: TicketsService;
 
+  const TENANT = 'tenant-1';
+
   const makeReq = (overrides: any = {}) => ({
-    user: { userId: 'user1', roles: ['CLIENT'] },
+    user: { userId: 'user1', roles: ['CLIENT'], tenantId: TENANT },
     headers: {},
     socket: { remoteAddress: '10.0.0.5' },
     ...overrides,
@@ -54,15 +56,15 @@ describe('TicketsController', () => {
 
     await controller.create(dto, makeReq(), 'Bearer token');
 
-    expect(ticketsService.create).toHaveBeenCalledWith(dto, 'Bearer token', 'user1', '10.0.0.5');
+    expect(ticketsService.create).toHaveBeenCalledWith(dto, TENANT, 'Bearer token', 'user1', '10.0.0.5');
   });
 
   it('findAll no filtra por usuario cuando el rol es ADMIN', async () => {
     jest.spyOn(ticketsService, 'findAll').mockResolvedValue([]);
 
-    await controller.findAll(makeReq({ user: { userId: 'admin1', roles: ['ADMIN'] } }));
+    await controller.findAll(makeReq({ user: { userId: 'admin1', roles: ['ADMIN'], tenantId: TENANT } }));
 
-    expect(ticketsService.findAll).toHaveBeenCalledWith(undefined);
+    expect(ticketsService.findAll).toHaveBeenCalledWith(TENANT, undefined);
   });
 
   it('findAll filtra por el propio usuario cuando el rol es CLIENT', async () => {
@@ -70,7 +72,7 @@ describe('TicketsController', () => {
 
     await controller.findAll(makeReq());
 
-    expect(ticketsService.findAll).toHaveBeenCalledWith('user1');
+    expect(ticketsService.findAll).toHaveBeenCalledWith(TENANT, 'user1');
   });
 
   it('findActivos delega en el servicio con el filtro de dueño', async () => {
@@ -78,7 +80,7 @@ describe('TicketsController', () => {
 
     await controller.findActivos(makeReq());
 
-    expect(ticketsService.findActivos).toHaveBeenCalledWith('user1');
+    expect(ticketsService.findActivos).toHaveBeenCalledWith(TENANT, 'user1');
   });
 
   it('findOne delega en el servicio', async () => {
@@ -86,10 +88,10 @@ describe('TicketsController', () => {
 
     await controller.findOne('1', makeReq());
 
-    expect(ticketsService.findOne).toHaveBeenCalledWith('1', 'user1');
+    expect(ticketsService.findOne).toHaveBeenCalledWith('1', TENANT, 'user1');
   });
 
-  it('cerrarTicket pasa usuario e IP al servicio', async () => {
+  it('cerrarTicket pasa tenant, usuario e IP al servicio', async () => {
     jest.spyOn(ticketsService, 'cerrarTicket').mockResolvedValue({ id: '1' } as any);
     const dto = { activo: false } as any;
 
@@ -98,6 +100,7 @@ describe('TicketsController', () => {
     expect(ticketsService.cerrarTicket).toHaveBeenCalledWith(
       '1',
       dto,
+      TENANT,
       'Bearer token',
       'user1',
       '10.0.0.5',
@@ -113,6 +116,7 @@ describe('TicketsController', () => {
     expect(ticketsService.cerrarTicket).toHaveBeenCalledWith(
       '1',
       dto,
+      TENANT,
       'Bearer token',
       'user1',
       '10.0.0.5',
@@ -124,7 +128,7 @@ describe('TicketsController', () => {
 
     await controller.remove('1', makeReq());
 
-    expect(ticketsService.remove).toHaveBeenCalledWith('1', 'user1', '10.0.0.5');
+    expect(ticketsService.remove).toHaveBeenCalledWith('1', TENANT, 'user1', '10.0.0.5');
   });
 
   it('toma la primera IP de x-forwarded-for', async () => {
@@ -135,6 +139,7 @@ describe('TicketsController', () => {
 
     expect(ticketsService.create).toHaveBeenCalledWith(
       { placa: 'ABC-1234' },
+      TENANT,
       undefined,
       'user1',
       '200.1.1.1',

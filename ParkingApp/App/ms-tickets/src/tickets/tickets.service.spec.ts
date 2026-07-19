@@ -12,6 +12,8 @@ import { CacheService } from '../common/cache.service';
 describe('TicketsService', () => {
   let service: TicketsService;
 
+  const TENANT = 'tenant-1';
+
   const repoMock = {
     find: jest.fn(),
     findOne: jest.fn(),
@@ -88,9 +90,12 @@ describe('TicketsService', () => {
       repoMock.create.mockReturnValue(ticketCreado);
       repoMock.save.mockResolvedValue(ticketCreado);
 
-      const result = await service.create(createDto, 'Bearer token', 'user1', '10.0.0.1');
+      const result = await service.create(createDto, TENANT, 'Bearer token', 'user1', '10.0.0.1');
 
       expect(result).toBe(ticketCreado);
+      expect(repoMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: TENANT }),
+      );
       expect(httpClientMock.put).toHaveBeenCalledWith(
         expect.stringContaining('estado=OCUPADO'),
         'Bearer token',
@@ -103,7 +108,7 @@ describe('TicketsService', () => {
     it('lanza BadRequestException si la persona no existe', async () => {
       httpClientMock.get.mockResolvedValue(null);
 
-      await expect(service.create(createDto)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(BadRequestException);
     });
 
     it('lanza BadRequestException si la placa no existe', async () => {
@@ -111,7 +116,7 @@ describe('TicketsService', () => {
         url.includes('/personas/') ? Promise.resolve(persona) : Promise.resolve(null),
       );
 
-      await expect(service.create(createDto)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(BadRequestException);
     });
 
     it('lanza BadRequestException si el espacio no está disponible', async () => {
@@ -122,7 +127,7 @@ describe('TicketsService', () => {
         return Promise.resolve(null);
       });
 
-      await expect(service.create(createDto)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(BadRequestException);
     });
 
     it('lanza BadRequestException si la placa ya tiene un ticket activo', async () => {
@@ -134,17 +139,17 @@ describe('TicketsService', () => {
       });
       repoMock.findOne.mockResolvedValue({ id: 'activo', activo: true });
 
-      await expect(service.create(createDto)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(BadRequestException);
     });
   });
 
-  it('findAll filtra por emisorUserId cuando se provee', async () => {
+  it('findAll filtra por tenant y emisorUserId cuando se provee', async () => {
     repoMock.find.mockResolvedValue([]);
 
-    await service.findAll('user1');
+    await service.findAll(TENANT, 'user1');
 
     expect(repoMock.find).toHaveBeenCalledWith({
-      where: { emisorUserId: 'user1' },
+      where: { tenantId: TENANT, emisorUserId: 'user1' },
       order: { fechhaHoraIngreso: 'DESC' },
     });
   });
@@ -154,29 +159,29 @@ describe('TicketsService', () => {
       const ticket = { id: '1', emisorUserId: 'user1' };
       repoMock.findOne.mockResolvedValue(ticket);
 
-      await expect(service.findOne('1')).resolves.toBe(ticket);
+      await expect(service.findOne('1', TENANT)).resolves.toBe(ticket);
     });
 
     it('lanza NotFoundException cuando no existe', async () => {
       repoMock.findOne.mockResolvedValue(null);
 
-      await expect(service.findOne('nope')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('nope', TENANT)).rejects.toThrow(NotFoundException);
     });
 
     it('lanza NotFoundException cuando pertenece a otro usuario', async () => {
       repoMock.findOne.mockResolvedValue({ id: '1', emisorUserId: 'otro' });
 
-      await expect(service.findOne('1', 'user1')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('1', TENANT, 'user1')).rejects.toThrow(NotFoundException);
     });
   });
 
-  it('findActivos filtra tickets activos', async () => {
+  it('findActivos filtra tickets activos del tenant', async () => {
     repoMock.find.mockResolvedValue([]);
 
-    await service.findActivos();
+    await service.findActivos(TENANT);
 
     expect(repoMock.find).toHaveBeenCalledWith({
-      where: { activo: true },
+      where: { activo: true, tenantId: TENANT },
       order: { fechhaHoraIngreso: 'DESC' },
     });
   });
@@ -196,6 +201,7 @@ describe('TicketsService', () => {
       const result = await service.cerrarTicket(
         '1',
         { fechhaHoraSalida: '2026-01-01T12:30:00Z' } as any,
+        TENANT,
         'Bearer token',
         'cobrador1',
         '10.0.0.1',
@@ -216,7 +222,7 @@ describe('TicketsService', () => {
       repoMock.findOne.mockResolvedValue({ ...ticketActivo, activo: false });
 
       await expect(
-        service.cerrarTicket('1', {} as any),
+        service.cerrarTicket('1', {} as any, TENANT),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -224,7 +230,7 @@ describe('TicketsService', () => {
       repoMock.findOne.mockResolvedValue({ ...ticketActivo });
 
       await expect(
-        service.cerrarTicket('1', { activo: true } as any),
+        service.cerrarTicket('1', { activo: true } as any, TENANT),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -232,7 +238,7 @@ describe('TicketsService', () => {
       repoMock.findOne.mockResolvedValue({ ...ticketActivo });
 
       await expect(
-        service.cerrarTicket('1', { fechhaHoraSalida: '2025-01-01T00:00:00Z' } as any),
+        service.cerrarTicket('1', { fechhaHoraSalida: '2025-01-01T00:00:00Z' } as any, TENANT),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -241,7 +247,7 @@ describe('TicketsService', () => {
     const ticket = { id: '1' };
     repoMock.findOne.mockResolvedValue(ticket);
 
-    await service.remove('1', 'user1', '10.0.0.1');
+    await service.remove('1', TENANT, 'user1', '10.0.0.1');
 
     expect(repoMock.remove).toHaveBeenCalledWith(ticket);
     expect(publisherMock.publishEvent).toHaveBeenCalledWith(

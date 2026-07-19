@@ -1,6 +1,7 @@
 package ec.edu.espe.zonas.servicios.impl;
 
 import ec.edu.espe.zonas.audit.AuditPublisher;
+import ec.edu.espe.zonas.config.TenantContext;
 import ec.edu.espe.zonas.dto.request.ZonaRequestDto;
 import ec.edu.espe.zonas.dto.response.ZonaResponseDto;
 import ec.edu.espe.zonas.entidades.Zona;
@@ -35,7 +36,8 @@ public class ServiciosZona implements ZonaServicio {
 
     private final AuditPublisher auditPublisher;
 
-    private String generarCodigo(TipoZona tipo) {
+    // La secuencia de códigos es independiente por tenant
+    private String generarCodigo(TipoZona tipo, UUID idTenant) {
 
         String prefijo = switch (tipo) {
             case VIP -> "ZON-VIP-";
@@ -46,9 +48,13 @@ public class ServiciosZona implements ZonaServicio {
 
         // Se avanza hasta el primer código libre: contar zonas deja huecos al
         // eliminar y provocaba códigos duplicados (violación de la restricción única)
-        long secuencia = zonaRepositorio.countByTipo(tipo) + 1;
+        long secuencia = (idTenant != null
+                ? zonaRepositorio.countByTipoAndIdTenant(tipo, idTenant)
+                : zonaRepositorio.countByTipo(tipo)) + 1;
         String codigo = prefijo + String.format("%02d", secuencia);
-        while (zonaRepositorio.existsByCodigo(codigo)) {
+        while (idTenant != null
+                ? zonaRepositorio.existsByCodigoAndIdTenant(codigo, idTenant)
+                : zonaRepositorio.existsByCodigo(codigo)) {
             secuencia++;
             codigo = prefijo + String.format("%02d", secuencia);
         }
@@ -56,9 +62,24 @@ public class ServiciosZona implements ZonaServicio {
         return codigo;
     }
 
+    // Zona de otro tenant → mismo error que si no existiera (no filtrar existencia entre empresas)
+    private Zona cargarZonaDelTenant(UUID idZona) {
+        Zona zona = zonaRepositorio.findById(idZona)
+                .orElseThrow(() -> new RuntimeException("No existe una zona con el id: " + idZona));
+        UUID tenantId = TenantContext.currentTenantId();
+        if (tenantId != null && !tenantId.equals(zona.getIdTenant())) {
+            throw new RuntimeException("No existe una zona con el id: " + idZona);
+        }
+        return zona;
+    }
+
     @Override
     public List<ZonaResponseDto> listarZonas() {
-        return zonaRepositorio.findAll().stream()
+        UUID tenantId = TenantContext.currentTenantId();
+        List<Zona> zonas = tenantId != null
+                ? zonaRepositorio.findByIdTenant(tenantId)
+                : zonaRepositorio.findAll(); // anónimo (monitoreo) ve todo
+        return zonas.stream()
                 .map(z -> {
                     ZonaResponseDto dto = mapper.toZonaResponseDto(z);
                     long cnt = espacioRepositorio.countByZonaId(z.getId());
@@ -72,14 +93,20 @@ public class ServiciosZona implements ZonaServicio {
     @Transactional
     public ZonaResponseDto crearZona(ZonaRequestDto requestDto) {
 
-        if (zonaRepositorio.existsByNombre(requestDto.getNombre())) {
+        UUID tenantId = TenantContext.currentTenantId();
+
+        boolean nombreDuplicado = tenantId != null
+                ? zonaRepositorio.existsByNombreAndIdTenant(requestDto.getNombre(), tenantId)
+                : zonaRepositorio.existsByNombre(requestDto.getNombre());
+        if (nombreDuplicado) {
             throw new IllegalArgumentException(
                     "Ya existe una zona con el nombre: " + requestDto.getNombre());
         }
 
         Zona zona = mapper.toZonaEntity(requestDto);
 
-        zona.setCodigo(generarCodigo(requestDto.getTipo()));
+        zona.setIdTenant(tenantId);
+        zona.setCodigo(generarCodigo(requestDto.getTipo(), tenantId));
         zona.setActivo(true);
 
         zona.setFechaCreacion(LocalDateTime.now());
@@ -103,6 +130,7 @@ public class ServiciosZona implements ZonaServicio {
                             .tipo(TipoEspacio.AUTO)
                             .estado(ec.edu.espe.zonas.entidades.EstadoEspacio.DISPONIBLE)
                             .zona(zonaSaved)
+                            .idTenant(zonaSaved.getIdTenant())
                             .activo(true)
                             .fechaCreacion(LocalDateTime.now())
                             .build();
@@ -134,9 +162,7 @@ public class ServiciosZona implements ZonaServicio {
     @Override
     public ZonaResponseDto actualizarZona(UUID idZona, ZonaRequestDto requestDto) {
 
-        Zona objZona = zonaRepositorio.findById(idZona)
-                .orElseThrow(() ->
-                        new RuntimeException("No existe una zona con el id: " + idZona));
+        Zona objZona = cargarZonaDelTenant(idZona);
 
         objZona.setNombre(requestDto.getNombre());
         objZona.setDescripcion(requestDto.getDescripcion());
@@ -156,8 +182,7 @@ public class ServiciosZona implements ZonaServicio {
     @Override
     @Transactional
     public void eliminarZona(UUID id) {
-        Zona zona = zonaRepositorio.findById(id)
-                .orElseThrow(() -> new RuntimeException("No existe una zona con el id: " + id));
+        Zona zona = cargarZonaDelTenant(id);
 
         // Validar que no haya espacios ocupados
         if (zona.getEspacios() != null && !zona.getEspacios().isEmpty()) {
@@ -182,8 +207,7 @@ public class ServiciosZona implements ZonaServicio {
     @Override
     @Transactional
     public void inicializarEspacios(UUID idZona) {
-        Zona zona = zonaRepositorio.findById(idZona)
-                .orElseThrow(() -> new RuntimeException("No existe una zona con el id: " + idZona));
+        Zona zona = cargarZonaDelTenant(idZona);
 
         long cnt = espacioRepositorio.countByZonaId(zona.getId());
         if (cnt > 0) return; // ya inicializado
@@ -197,6 +221,7 @@ public class ServiciosZona implements ZonaServicio {
                     .tipo(TipoEspacio.AUTO)
                     .estado(ec.edu.espe.zonas.entidades.EstadoEspacio.DISPONIBLE)
                     .zona(zona)
+                    .idTenant(zona.getIdTenant())
                     .activo(true)
                     .fechaCreacion(LocalDateTime.now())
                     .build();

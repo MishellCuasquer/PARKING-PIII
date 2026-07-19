@@ -3,13 +3,15 @@ import { useAuth } from '../context/AuthContext';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '📊', end: true },
+  { to: '/mis-empresas', label: 'Mis empresas', icon: '🏢' },
   { to: '/espacios', label: 'Espacios', icon: '🅿️' },
   { to: '/vehiculos', label: 'Vehículos', icon: '🚗' },
   { to: '/tickets', label: 'Tickets', icon: '🎫' },
   { to: '/zonas', label: 'Zonas', icon: '🗺️', roles: ['ADMIN', 'OPERATOR'] },
-  { to: '/usuarios', label: 'Usuarios', icon: '👥', roles: ['ADMIN'] },
+  { to: '/tenants', label: 'Empresas', icon: '🏢', roles: ['SUPER_ADMIN'] },
+  { to: '/usuarios', label: 'Usuarios', icon: '👥', roles: ['ADMIN', 'SUPER_ADMIN'] },
   { to: '/roles', label: 'Roles', icon: '🔐.', roles: ['ADMIN'] },
-  { to: '/auditoria', label: 'Auditoría', icon: '📜', roles: ['ADMIN'] },
+  { to: '/auditoria', label: 'Auditoría', icon: '📜', roles: ['ADMIN', 'SUPER_ADMIN'] },
 ];
 
 export default function Layout() {
@@ -51,6 +53,7 @@ export default function Layout() {
             <div>
               <strong>{user?.username}</strong>
               <small>{(user?.roles || []).join(', ')}</small>
+              {user?.tenantName && <small>🏢 {user.tenantName}</small>}
             </div>
           </div>
           <button className="btn btn-ghost" onClick={handleLogout}>

@@ -13,6 +13,8 @@ export function AuthProvider({ children }) {
       userId: res.userId,
       username: res.username,
       roles: res.roles || [],
+      tenantId: res.tenantId || null,
+      tenantName: res.tenantNombre || null,
     };
     saveSession(res.token, logged);
     setUser(logged);
@@ -29,12 +31,28 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // Cambia a otra empresa del mismo dueño sin re-login: reemplaza el token de sesión
+  const switchEmpresa = async (tenantId) => {
+    const res = await authApi.cambiarEmpresa(tenantId);
+    const logged = {
+      userId: res.userId,
+      username: res.username,
+      roles: res.roles || [],
+      tenantId: res.tenantId || null,
+      tenantName: res.tenantNombre || null,
+    };
+    saveSession(res.token, logged);
+    setUser(logged);
+    return logged;
+  };
+
   const value = useMemo(() => {
     const roles = user?.roles || [];
     return {
       user,
       login,
       logout,
+      switchEmpresa,
       isAuthenticated: Boolean(user),
       hasRole: (...allowed) => allowed.some((r) => roles.includes(r)),
     };

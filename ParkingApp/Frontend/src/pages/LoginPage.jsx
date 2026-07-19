@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { authApi } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import { ErrorMsg } from '../components/Feedback';
 
@@ -19,9 +20,16 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(username.trim(), password);
-      navigate('/');
+      // Dueño con cuenta en varias empresas: elegir a cuál entrar antes del dashboard
+      let empresas = [];
+      try {
+        empresas = (await authApi.misEmpresas()) || [];
+      } catch {
+        // si el listado falla, se entra directo a la empresa del token
+      }
+      navigate(empresas.length > 1 ? '/mis-empresas' : '/');
     } catch (err) {
-      setError(err.status === 401 || err.status === 403 ? 'Usuario o contraseña incorrectos' : err.message);
+      setError(err.status === 401 || err.status === 403 ? 'Usuario/correo o contraseña incorrectos' : err.message);
     } finally {
       setLoading(false);
     }
@@ -41,11 +49,11 @@ export default function LoginPage() {
           <p className="muted">Ingresa como administrador, operador o cliente.</p>
 
           <label>
-            Usuario
+            Usuario o correo
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
+              placeholder="admin o correo@dominio.com"
               autoFocus
               required
             />

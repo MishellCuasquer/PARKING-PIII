@@ -1,5 +1,6 @@
 package ec.edu.espe.zonas.audit;
 
+import ec.edu.espe.zonas.config.TenantContext;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -31,12 +33,22 @@ public class AuditPublisher {
 
     public void publish(String accion, String entidad, Map<String, Object> datos) {
         AuditEvent event = new AuditEvent(
-                SERVICIO, accion, entidad, datos, currentUser(), currentIp(), "N/A"
+                SERVICIO, accion, entidad, datos, currentUser(), currentIp(), "N/A", currentTenant()
         );
         try {
             rabbitTemplate.convertAndSend(exchangeName, routingKey, event);
         } catch (Exception e) {
             log.error("Failed to publish audit event: {}", e.getMessage());
+        }
+    }
+
+    // Null en peticiones anónimas (monitoreo) o de cuentas globales
+    private String currentTenant() {
+        try {
+            UUID tenantId = TenantContext.currentTenantId();
+            return tenantId != null ? tenantId.toString() : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 

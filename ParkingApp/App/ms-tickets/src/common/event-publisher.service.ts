@@ -11,6 +11,7 @@ export interface AuditEvent {
   usuario?: string;
   ip?: string;
   mac?: string;
+  tenantId?: string;
 
 }
 

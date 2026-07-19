@@ -19,4 +19,6 @@ public class LoginResponse {
     private String userId;
     private String username;
     private List<String> roles;
+    private String tenantId;
+    private String tenantNombre;
 }

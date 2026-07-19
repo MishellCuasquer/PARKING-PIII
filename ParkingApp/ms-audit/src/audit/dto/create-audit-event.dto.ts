@@ -49,7 +49,12 @@ export class CreateAuditEventDto {
 
     @IsString()
     @IsOptional()
-    mac!: string;  
+    mac!: string;
 
-    
+    @IsString()
+    @IsOptional()
+    @MaxLength(50)
+    tenantId?: string;
+
+
 }

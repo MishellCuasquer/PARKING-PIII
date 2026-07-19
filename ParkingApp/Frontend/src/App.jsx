@@ -11,6 +11,8 @@ import TicketsPage from './pages/TicketsPage';
 import UsuariosPage from './pages/UsuariosPage';
 import RolesPage from './pages/RolesPage';
 import AuditoriaPage from './pages/AuditoriaPage';
+import TenantsPage from './pages/TenantsPage';
+import MisEmpresasPage from './pages/MisEmpresasPage';
 
 export default function App() {
   return (
@@ -27,6 +29,7 @@ export default function App() {
         }
       >
         <Route index element={<DashboardPage />} />
+        <Route path="mis-empresas" element={<MisEmpresasPage />} />
         <Route path="espacios" element={<EspaciosPage />} />
         <Route path="vehiculos" element={<VehiculosPage />} />
         <Route path="tickets" element={<TicketsPage />} />
@@ -39,9 +42,17 @@ export default function App() {
           }
         />
         <Route
+          path="tenants"
+          element={
+            <ProtectedRoute roles={['SUPER_ADMIN']}>
+              <TenantsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="usuarios"
           element={
-            <ProtectedRoute roles={['ADMIN']}>
+            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
               <UsuariosPage />
             </ProtectedRoute>
           }
@@ -57,7 +68,7 @@ export default function App() {
         <Route
           path="auditoria"
           element={
-            <ProtectedRoute roles={['ADMIN']}>
+            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
               <AuditoriaPage />
             </ProtectedRoute>
           }

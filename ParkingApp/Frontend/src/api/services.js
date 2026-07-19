@@ -5,6 +5,11 @@ export const authApi = {
   login: (username, password) =>
     api('/api/auth/login', { method: 'POST', body: { username, password }, auth: false }),
   logout: () => api('/api/auth/logout', { method: 'POST' }),
+  // Empresas donde la persona autenticada (mismo email+dni) tiene cuenta
+  misEmpresas: () => api('/api/auth/empresas'),
+  // Cambia el contexto a otra empresa del mismo dueño: devuelve token nuevo
+  cambiarEmpresa: (tenantId) =>
+    api('/api/auth/cambiar-empresa', { method: 'POST', body: { tenantId } }),
 };
 
 export const usersApi = {
@@ -27,9 +32,20 @@ export const personasApi = {
   byDni: (dni) => api(`/api/personas/${dni}`),
 };
 
+// ---- tenants / empresas (ms-usuarios-roles-auth via Kong /api/tenants) ----
+export const tenantsApi = {
+  // Público: alimenta el selector de empresa del registro
+  publicList: () => api('/api/tenants/publicos', { auth: false }),
+  list: () => api('/api/tenants'),
+  create: (data) => api('/api/tenants', { method: 'POST', body: data }),
+  update: (id, data) => api(`/api/tenants/${id}`, { method: 'PUT', body: data }),
+  remove: (id) => api(`/api/tenants/${id}`, { method: 'DELETE' }),
+};
+
 // ---- ms-zonas-espacios (via Kong /api/...) ----
+// list va autenticado: el backend filtra por el tenant del token
 export const zonasApi = {
-  list: () => api('/api/zonas', { auth: false }),
+  list: () => api('/api/zonas'),
   create: (data) => api('/api/zonas', { method: 'POST', body: data }),
   update: (id, data) => api(`/api/zonas/${id}`, { method: 'PUT', body: data }),
   remove: (id) => api(`/api/zonas/${id}`, { method: 'DELETE' }),
@@ -37,7 +53,7 @@ export const zonasApi = {
 };
 
 export const espaciosApi = {
-  list: () => api('/api/espacios', { auth: false }),
+  list: () => api('/api/espacios'),
   create: (data) => api('/api/espacios', { method: 'POST', body: data }),
   remove: (id) => api(`/api/espacios/${id}`, { method: 'DELETE' }),
   // El backend espera el estado como query param (@RequestParam)

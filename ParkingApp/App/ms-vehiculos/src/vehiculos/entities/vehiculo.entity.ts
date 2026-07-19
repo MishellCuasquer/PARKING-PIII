@@ -1,5 +1,5 @@
 import { IsEnum } from 'class-validator';
-import {Column, Entity, PrimaryGeneratedColumn, TableInheritance} from 'typeorm';
+import {Column, Entity, Index, PrimaryGeneratedColumn, TableInheritance} from 'typeorm';
 
 export enum Clasificacion{
     DIESEL = 'Diesel',
@@ -10,13 +10,19 @@ export enum Clasificacion{
 }
 @Entity()
 @TableInheritance({ column: { type: 'varchar', name: 'tipo' } })
+// La placa es única por tenant: la misma placa puede registrarse en dos parqueaderos
+@Index('UQ_vehiculo_tenant_placa', ['tenantId', 'placa'], { unique: true })
 export abstract class Vehiculo {
 
     @PrimaryGeneratedColumn('uuid')
     id!: string;
 
-    @Column({ unique: true })
+    @Column()
     placa!: string;
+
+    // Empresa/parqueadero dueño del registro; null solo en datos previos al multitenant
+    @Column({ type: 'uuid', nullable: true })
+    tenantId?: string | null;
 
     @Column()
     marca!: string;

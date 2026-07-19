@@ -43,6 +43,10 @@ public class Espacio {
     @JoinColumn(name = "id_zona")
     private Zona zona;
 
+    // Copia del tenant de la zona para poder filtrar sin join
+    @Column(name = "id_tenant")
+    private UUID idTenant;
+
     @Enumerated(EnumType.STRING)
     @Column(name ="estado")
     private EstadoEspacio estado;

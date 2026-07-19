@@ -13,7 +13,11 @@ import java.util.UUID;
 
 @Builder
 @Entity
-@Table
+// nombre y codigo son únicos por tenant: dos empresas pueden tener "Zona VIP" cada una
+@Table(uniqueConstraints = {
+        @UniqueConstraint(name = "uk_zona_nombre_tenant", columnNames = {"nombre", "id_tenant"}),
+        @UniqueConstraint(name = "uk_zona_codigo_tenant", columnNames = {"codigo", "id_tenant"})
+})
 @Data
 //@Builder
 @NoArgsConstructor
@@ -27,11 +31,15 @@ public class Zona {
 
     private UUID id;
 
-    @Column(nullable = false, unique = true, length = 25)
+    @Column(nullable = false, length = 25)
     private String nombre;
 
-    @Column(nullable = false, unique = true, length = 11)
+    @Column(nullable = false, length = 11)
     private String codigo;  //ZON-VIP-01, ZON-VIP-02, ZON-VIS-01
+
+    // Empresa/parqueadero dueño de la zona; null solo en datos previos al multitenant
+    @Column(name = "id_tenant")
+    private UUID idTenant;
 
 
 

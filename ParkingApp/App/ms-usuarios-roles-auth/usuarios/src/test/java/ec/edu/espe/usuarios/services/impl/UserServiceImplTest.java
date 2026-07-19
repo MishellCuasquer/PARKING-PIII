@@ -6,10 +6,13 @@ import ec.edu.espe.usuarios.dto.request.UserUpdateRequest;
 import ec.edu.espe.usuarios.dto.response.UserResponse;
 import ec.edu.espe.usuarios.entity.Person;
 import ec.edu.espe.usuarios.entity.Role;
+import ec.edu.espe.usuarios.entity.Tenant;
 import ec.edu.espe.usuarios.entity.User;
 import ec.edu.espe.usuarios.repository.PersonRepository;
 import ec.edu.espe.usuarios.repository.RoleRepository;
+import ec.edu.espe.usuarios.repository.TenantRepository;
 import ec.edu.espe.usuarios.repository.UserRepository;
+import ec.edu.espe.usuarios.security.CallerContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,20 +43,26 @@ class UserServiceImplTest {
     @Mock
     private RoleRepository roleRepository;
     @Mock
+    private TenantRepository tenantRepository;
+    @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
     private AuditPublisher auditPublisher;
+    @Mock
+    private CallerContext callerContext;
 
     @InjectMocks
     private UserServiceImpl userService;
 
     private Role clientRole;
+    private Tenant tenant;
     private Person person;
     private User user;
 
     @BeforeEach
     void setUp() {
         clientRole = Role.builder().id(UUID.randomUUID()).name("CLIENT").build();
+        tenant = Tenant.builder().id(UUID.randomUUID()).nombre("Parqueadero Test").codigo("TEST").activo(true).build();
         person = Person.builder()
                 .id(UUID.randomUUID())
                 .dni("1111111111")
@@ -61,6 +70,7 @@ class UserServiceImplTest {
                 .lastName("Perez")
                 .email("juan@test.com")
                 .phone("0999999999")
+                .tenant(tenant)
                 .build();
         user = User.builder()
                 .id(person.getId())
@@ -80,9 +90,11 @@ class UserServiceImplTest {
         request.setLastName("Perez");
         request.setEmail("juan@test.com");
         request.setPhone("0999999999");
+        request.setTenantId(tenant.getId().toString());
 
-        when(personRepository.existsByEmail(request.getEmail())).thenReturn(false);
-        when(personRepository.existsByDni(request.getDni())).thenReturn(false);
+        when(tenantRepository.findById(tenant.getId())).thenReturn(Optional.of(tenant));
+        when(personRepository.existsByEmailAndTenant_Id(request.getEmail(), tenant.getId())).thenReturn(false);
+        when(personRepository.existsByDniAndTenant_Id(request.getDni(), tenant.getId())).thenReturn(false);
         when(personRepository.save(any(Person.class))).thenReturn(person);
         when(roleRepository.findByName("CLIENT")).thenReturn(Optional.of(clientRole));
         when(passwordEncoder.encode(anyString())).thenReturn("hashed");
@@ -91,7 +103,8 @@ class UserServiceImplTest {
         UserResponse response = userService.createUser(request);
 
         assertThat(response.getUsername()).isEqualTo("jpperez");
-        verify(auditPublisher).publish(org.mockito.ArgumentMatchers.eq("CREATE"), org.mockito.ArgumentMatchers.eq("User"), anyMap());
+        verify(auditPublisher).publish(org.mockito.ArgumentMatchers.eq("CREATE"), org.mockito.ArgumentMatchers.eq("User"), anyMap(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -103,9 +116,11 @@ class UserServiceImplTest {
         request.setLastName("Perez Ruiz");
         request.setEmail("juan2@test.com");
         request.setPhone("0988888888");
+        request.setTenantId(tenant.getId().toString());
 
-        when(personRepository.existsByEmail(request.getEmail())).thenReturn(false);
-        when(personRepository.existsByDni(request.getDni())).thenReturn(false);
+        when(tenantRepository.findById(tenant.getId())).thenReturn(Optional.of(tenant));
+        when(personRepository.existsByEmailAndTenant_Id(request.getEmail(), tenant.getId())).thenReturn(false);
+        when(personRepository.existsByDniAndTenant_Id(request.getDni(), tenant.getId())).thenReturn(false);
         when(personRepository.save(any(Person.class))).thenReturn(person);
         when(roleRepository.findByName("CLIENT")).thenReturn(Optional.of(clientRole));
         when(passwordEncoder.encode(anyString())).thenReturn("hashed");
@@ -129,8 +144,10 @@ class UserServiceImplTest {
         UserCreateRequest request = new UserCreateRequest();
         request.setEmail("juan@test.com");
         request.setDni("1111111111");
+        request.setTenantId(tenant.getId().toString());
 
-        when(personRepository.existsByEmail(request.getEmail())).thenReturn(true);
+        when(tenantRepository.findById(tenant.getId())).thenReturn(Optional.of(tenant));
+        when(personRepository.existsByEmailAndTenant_Id(request.getEmail(), tenant.getId())).thenReturn(true);
 
         assertThatThrownBy(() -> userService.createUser(request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -142,13 +159,28 @@ class UserServiceImplTest {
         UserCreateRequest request = new UserCreateRequest();
         request.setEmail("nuevo@test.com");
         request.setDni("1111111111");
+        request.setTenantId(tenant.getId().toString());
 
-        when(personRepository.existsByEmail(request.getEmail())).thenReturn(false);
-        when(personRepository.existsByDni(request.getDni())).thenReturn(true);
+        when(tenantRepository.findById(tenant.getId())).thenReturn(Optional.of(tenant));
+        when(personRepository.existsByEmailAndTenant_Id(request.getEmail(), tenant.getId())).thenReturn(false);
+        when(personRepository.existsByDniAndTenant_Id(request.getDni(), tenant.getId())).thenReturn(true);
 
         assertThatThrownBy(() -> userService.createUser(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("DNI");
+    }
+
+    @Test
+    void createUser_lanzaBadRequestSiRegistroAnonimoSinTenant() {
+        UserCreateRequest request = new UserCreateRequest();
+        request.setEmail("nuevo@test.com");
+        request.setDni("3333333333");
+
+        when(callerContext.callerTenantId()).thenReturn(null);
+
+        assertThatThrownBy(() -> userService.createUser(request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("tenantId");
     }
 
     @Test
@@ -219,8 +251,8 @@ class UserServiceImplTest {
         request.setPhone("0999999999");
 
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
-        when(personRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(person));
-        when(personRepository.findByPhone(request.getPhone())).thenReturn(Optional.of(person));
+        when(personRepository.findByEmailAndTenant_Id(request.getEmail(), tenant.getId())).thenReturn(Optional.of(person));
+        when(personRepository.findByPhoneAndTenant_Id(request.getPhone(), tenant.getId())).thenReturn(Optional.of(person));
         when(personRepository.save(any(Person.class))).thenReturn(person);
 
         UserResponse response = userService.updateUser(user.getId(), request);
@@ -237,7 +269,7 @@ class UserServiceImplTest {
         Person otraPersona = Person.builder().id(UUID.randomUUID()).build();
 
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
-        when(personRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(otraPersona));
+        when(personRepository.findByEmailAndTenant_Id(request.getEmail(), tenant.getId())).thenReturn(Optional.of(otraPersona));
 
         assertThatThrownBy(() -> userService.updateUser(user.getId(), request))
                 .isInstanceOf(ResponseStatusException.class);
