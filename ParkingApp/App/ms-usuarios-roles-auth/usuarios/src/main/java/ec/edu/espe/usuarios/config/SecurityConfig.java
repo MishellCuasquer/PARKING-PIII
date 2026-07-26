@@ -53,6 +53,13 @@ public class SecurityConfig {
                         // sin esto la respuesta se convierte en un 401 vacío en vez del error real
                         .requestMatchers(
                                 "/api/auth/login",
+                                // Recuperación de contraseña: por definición la pide
+                                // quien NO puede autenticarse. El abuso lo contiene el
+                                // rate limiting de Kong sobre este servicio, y la
+                                // respuesta es siempre la misma para no revelar qué
+                                // correos existen.
+                                "/api/auth/recuperar-password",
+                                "/api/auth/restablecer-password",
                                 "/api/oauth/token",
                                 "/api/oauth/introspect",
                                 "/api/validate-token",
@@ -67,6 +74,23 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/tenants/publicos")
                         .permitAll()
 
+                        // Documentación OpenAPI: describe el contrato, no expone datos.
+                        // Tiene que ser pública o la propia UI de Swagger no puede
+                        // descargar el JSON que necesita para pintarse.
+                        .requestMatchers(
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html"
+                        ).permitAll()
+
+                        // Configuración de la empresa (tarifa, moneda, horario):
+                        // la lee ms-tickets con la cuenta de servicio en cada cierre
+                        // de ticket, y el ADMIN de la empresa para mostrarla en el
+                        // panel. Va ANTES de la regla /api/tenants/** o el
+                        // SUPER_ADMIN sería el único con acceso.
+                        .requestMatchers(HttpMethod.GET, "/api/tenants/*/configuracion")
+                        .hasAnyRole("SERVICE", "ADMIN", "OPERATOR", "SUPER_ADMIN")
+
                         // Gestión de tenants: solo el superadmin global
                         .requestMatchers("/api/tenants/**")
                         .hasRole("SUPER_ADMIN")
@@ -78,6 +102,11 @@ public class SecurityConfig {
                         // Personas: crear
                         .requestMatchers(HttpMethod.POST, "/api/personas")
                         .hasAnyRole("ADMIN", "OPERATOR", "CLIENT")
+
+                        // Comprobar cédula al registrar: consulta entre empresas para autocompletar
+                        // el formulario. Devuelve solo los datos de la persona, nunca su empresa.
+                        .requestMatchers(HttpMethod.GET, "/api/personas/comprobar/**")
+                        .hasAnyRole("ADMIN", "OPERATOR", "SUPER_ADMIN")
 
                         // Personas: consultar por DNI o listar (CLIENT la necesita para emitir sus propios tickets)
                         .requestMatchers(HttpMethod.GET, "/api/personas/**")

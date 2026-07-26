@@ -1,0 +1,41 @@
+# Acceso directo al API Gateway desde fuera del clúster.
+#
+# Se separa en su propio Ingress (y su propio host) en vez de añadir un path
+# /api al Ingress del frontend porque las anotaciones de nginx-ingress aplican
+# al recurso COMPLETO: mezclar aquí el rewrite o los timeouts largos del SSE
+# afectaría también a la entrega de los estáticos del SPA.
+#
+# Uso previsto: Postman, la colección de pruebas de la API y la demostración
+# del rate limiting de Kong (cabeceras X-RateLimit-*).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: parqueadero-api
+  namespace: parqueadero
+  labels:
+    app.kubernetes.io/part-of: parqueadero-saas
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.parqueadero.espe.edu.ec
+      secretName: parqueadero-api-tls
+  rules:
+    - host: api.parqueadero.espe.edu.ec
+      http:
+        paths:
+          # Kong recibe la ruta tal cual (todos los `routes` de kong.yml usan
+          # strip_path: false, así que el path completo debe llegar intacto).
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kong
+                port:
+                  number: 8000

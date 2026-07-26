@@ -262,4 +262,93 @@ class ServiciosEspacioTest {
         assertThat(result).containsOnlyKeys("Zona VIP");
         assertThat(result.get("Zona VIP")).hasSize(2);
     }
+
+    // ---- actualizarEspacio ----
+    // Antes era un stub que siempre lanzaba, asi que PUT /api/espacios/{id}
+    // devolvia 500 y no habia forma de convertir un espacio de AUTO a MOTO.
+
+    private Espacio espacioDe(UUID tenantId, TipoEspacio tipo, EstadoEspacio estado) {
+        Zona zona = Zona.builder().id(UUID.randomUUID()).nombre("Zona A").idTenant(tenantId).build();
+        return Espacio.builder()
+                .id(UUID.randomUUID())
+                .nombre("ZON-GEN-ESP-01-001")
+                .tipo(tipo)
+                .estado(estado)
+                .zona(zona)
+                .idTenant(tenantId)
+                .build();
+    }
+
+    @Test
+    void actualizarEspacio_cambiaElTipoDeAutoAMoto() {
+        UUID tenantId = autenticarConTenant();
+        Espacio espacio = espacioDe(tenantId, TipoEspacio.AUTO, EstadoEspacio.DISPONIBLE);
+        EspacioRequestDto dto = new EspacioRequestDto("solo motos", TipoEspacio.MOTO, UUID.randomUUID());
+
+        when(espacioRepositorio.findById(espacio.getId())).thenReturn(Optional.of(espacio));
+        when(espacioRepositorio.save(any(Espacio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        EspacioResponseDto result = serviciosEspacio.actualizarEspacio(espacio.getId(), dto);
+
+        assertThat(result.getTipoEspacio()).isEqualTo(TipoEspacio.MOTO);
+        assertThat(espacio.getDescripcion()).isEqualTo("solo motos");
+        assertThat(espacio.getFechaActualizacion()).isNotNull();
+        verify(auditPublisher).publish(eq("UPDATE"), eq("Espacio"), anyMap());
+    }
+
+    /** Cambiar el tipo con un vehiculo dentro dejaria una plaza incoherente. */
+    @Test
+    void actualizarEspacio_noPermiteCambiarElTipoSiEstaOcupado() {
+        UUID tenantId = autenticarConTenant();
+        Espacio espacio = espacioDe(tenantId, TipoEspacio.AUTO, EstadoEspacio.OCUPADO);
+        EspacioRequestDto dto = new EspacioRequestDto(null, TipoEspacio.MOTO, UUID.randomUUID());
+
+        when(espacioRepositorio.findById(espacio.getId())).thenReturn(Optional.of(espacio));
+
+        assertThatThrownBy(() -> serviciosEspacio.actualizarEspacio(espacio.getId(), dto))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("ocupado");
+        assertThat(espacio.getTipo()).isEqualTo(TipoEspacio.AUTO);
+    }
+
+    /** Un espacio ocupado si puede cambiar la descripcion: no cambia el tipo. */
+    @Test
+    void actualizarEspacio_permiteEditarLaDescripcionAunqueEsteOcupado() {
+        UUID tenantId = autenticarConTenant();
+        Espacio espacio = espacioDe(tenantId, TipoEspacio.AUTO, EstadoEspacio.OCUPADO);
+        EspacioRequestDto dto = new EspacioRequestDto("junto a la rampa", TipoEspacio.AUTO, UUID.randomUUID());
+
+        when(espacioRepositorio.findById(espacio.getId())).thenReturn(Optional.of(espacio));
+        when(espacioRepositorio.save(any(Espacio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        serviciosEspacio.actualizarEspacio(espacio.getId(), dto);
+
+        assertThat(espacio.getDescripcion()).isEqualTo("junto a la rampa");
+    }
+
+    @Test
+    void actualizarEspacio_lanzaSiElEspacioNoExiste() {
+        UUID id = UUID.randomUUID();
+        EspacioRequestDto dto = new EspacioRequestDto(null, TipoEspacio.MOTO, UUID.randomUUID());
+        when(espacioRepositorio.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> serviciosEspacio.actualizarEspacio(id, dto))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("no encontrado");
+    }
+
+    /** Aislamiento multitenant: el espacio de otra empresa "no existe". */
+    @Test
+    void actualizarEspacio_noTocaEspaciosDeOtraEmpresa() {
+        autenticarConTenant();
+        Espacio ajeno = espacioDe(UUID.randomUUID(), TipoEspacio.AUTO, EstadoEspacio.DISPONIBLE);
+        EspacioRequestDto dto = new EspacioRequestDto(null, TipoEspacio.MOTO, UUID.randomUUID());
+
+        when(espacioRepositorio.findById(ajeno.getId())).thenReturn(Optional.of(ajeno));
+
+        assertThatThrownBy(() -> serviciosEspacio.actualizarEspacio(ajeno.getId(), dto))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("no encontrado");
+        assertThat(ajeno.getTipo()).isEqualTo(TipoEspacio.AUTO);
+    }
 }

@@ -8,6 +8,7 @@ import { HttpClientService } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 import { EventPublisher } from '../common/event-publisher.service';
 import { CacheService } from '../common/cache.service';
+import { TenantConfigService } from '../common/tenant-config.service';
 
 describe('TicketsController', () => {
   let controller: TicketsController;
@@ -38,6 +39,13 @@ describe('TicketsController', () => {
         {
           provide: CacheService,
           useValue: { get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn() },
+        },
+        {
+          provide: TenantConfigService,
+          useValue: {
+            getTarifaHora: jest.fn().mockResolvedValue(1),
+            getConfig: jest.fn().mockResolvedValue(null),
+          },
         },
       ],
     }).compile();

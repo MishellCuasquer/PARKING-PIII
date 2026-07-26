@@ -1,0 +1,79 @@
+# Frontend SPA (React + Vite, servido por nginx).
+#
+# El nginx.conf horneado en la imagen hace de proxy hacia el Service `kong`
+# (/api y /gw), incluido el location sin buffering del stream SSE. Por eso el
+# Ingress puede mandar TODO el tráfico aquí: el navegador solo habla con un
+# origen y no hay CORS de por medio.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: parqueadero
+  labels:
+    app: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: parqueadero
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/mishellcuasquer/parking-piii/frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          # Sin runAsNonRoot: la imagen oficial de nginx necesita arrancar como
+          # root para bindear el puerto 80 y escribir /var/cache/nginx; los
+          # workers ya bajan a `nginx` por sí solos.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"]

@@ -2,24 +2,14 @@ name: parkingapp
 
 services:
   kong:
-    image: kong:3.6
+    # Imagen propia (docker/kong/Dockerfile): kong.yml horneado dentro, mismo
+    # artefacto que se despliega en Kubernetes.
+    build:
+      context: .
+      dockerfile: docker/kong/Dockerfile
+    image: ghcr.io/mishellcuasquer/parking-piii/kong:latest
     container_name: parking-kong
     restart: unless-stopped
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_LISTEN: 0.0.0.0:8001
-      # El DNS embebido de Docker responde SERVFAIL a las consultas SRV y Kong
-      # pierde ~4s por request reintentándolas (el SSE muere por timeout).
-      # Solo registros A/CNAME + cache de 60s = resolución instantánea.
-      KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_DNS_VALID_TTL: "60"
-    volumes:
-      - ./App/kong.yml:/kong/kong.yml:ro
     ports:
       - "8000:8000"
       - "8001:8001"
@@ -65,7 +55,12 @@ services:
       retries: 10
 
   rabbitmq:
-    image: rabbitmq:3-management
+    # Imagen propia (docker/rabbitmq/Dockerfile): plugin de métricas Prometheus
+    # y rabbitmq.conf del proyecto.
+    build:
+      context: .
+      dockerfile: docker/rabbitmq/Dockerfile
+    image: ghcr.io/mishellcuasquer/parking-piii/rabbitmq:latest
     container_name: parking-rabbitmq
     # Hostname fijo: RabbitMQ guarda sus datos bajo rabbit@<hostname>; si cambia
     # en cada recreación, el arranque falla con timeout_waiting_for_khepri_projections
@@ -113,6 +108,10 @@ services:
       RABBITMQ_PORT: "5672"
       RABBITMQ_USER: admin
       RABBITMQ_PASSWORD: admin123
+      # Sin servidor SMTP en local, el token de recuperación se devuelve en la
+      # respuesta para poder probar el flujo. En Kubernetes se queda en false
+      # (por defecto) y el token solo aparece en el log del servicio.
+      PASSWORD_RESET_EXPONER_TOKEN: "true"
     ports:
       - "8080:8080"
     depends_on:

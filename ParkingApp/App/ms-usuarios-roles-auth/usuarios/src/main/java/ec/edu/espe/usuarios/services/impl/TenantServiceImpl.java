@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,6 +22,14 @@ import java.util.UUID;
 @Transactional
 @RequiredArgsConstructor
 public class TenantServiceImpl implements TenantService {
+
+    // Valores por defecto de la configuración de una empresa. Se aplican tanto
+    // al crear una empresa sin configuración explícita como al leer una empresa
+    // antigua, anterior a que estas columnas existieran (ahí están a NULL).
+    private static final BigDecimal TARIFA_HORA_DEFECTO = new BigDecimal("1.00");
+    private static final String MONEDA_DEFECTO = "USD";
+    private static final LocalTime APERTURA_DEFECTO = LocalTime.of(0, 0);
+    private static final LocalTime CIERRE_DEFECTO = LocalTime.of(23, 59);
 
     private final TenantRepository tenantRepository;
     private final AuditPublisher auditPublisher;
@@ -38,6 +48,10 @@ public class TenantServiceImpl implements TenantService {
                 .nombre(request.getNombre())
                 .codigo(codigo)
                 .activo(request.getActivo() == null || request.getActivo())
+                .tarifaHora(request.getTarifaHora() != null ? request.getTarifaHora() : TARIFA_HORA_DEFECTO)
+                .moneda(request.getMoneda() != null ? request.getMoneda() : MONEDA_DEFECTO)
+                .horaApertura(request.getHoraApertura() != null ? request.getHoraApertura() : APERTURA_DEFECTO)
+                .horaCierre(request.getHoraCierre() != null ? request.getHoraCierre() : CIERRE_DEFECTO)
                 .build();
         tenant = tenantRepository.save(tenant);
 
@@ -84,6 +98,22 @@ public class TenantServiceImpl implements TenantService {
         if (request.getActivo() != null) {
             tenant.setActivo(request.getActivo());
         }
+
+        // Configuración: solo se toca lo que venga informado. Así el formulario
+        // de renombrar la empresa no borra su tarifa ni su horario.
+        if (request.getTarifaHora() != null) {
+            tenant.setTarifaHora(request.getTarifaHora());
+        }
+        if (request.getMoneda() != null) {
+            tenant.setMoneda(request.getMoneda());
+        }
+        if (request.getHoraApertura() != null) {
+            tenant.setHoraApertura(request.getHoraApertura());
+        }
+        if (request.getHoraCierre() != null) {
+            tenant.setHoraCierre(request.getHoraCierre());
+        }
+
         tenant = tenantRepository.save(tenant);
 
         auditPublisher.publish("UPDATE", "Tenant", Map.of(
@@ -118,6 +148,13 @@ public class TenantServiceImpl implements TenantService {
                 .nombre(tenant.getNombre())
                 .codigo(tenant.getCodigo())
                 .activo(tenant.getActivo())
+                // Los null solo aparecen en empresas creadas antes de que
+                // existiera la configuración por tenant; se les da el defecto
+                // para que ningún consumidor tenga que tratar el caso nulo.
+                .tarifaHora(tenant.getTarifaHora() != null ? tenant.getTarifaHora() : TARIFA_HORA_DEFECTO)
+                .moneda(tenant.getMoneda() != null ? tenant.getMoneda() : MONEDA_DEFECTO)
+                .horaApertura(tenant.getHoraApertura() != null ? tenant.getHoraApertura() : APERTURA_DEFECTO)
+                .horaCierre(tenant.getHoraCierre() != null ? tenant.getHoraCierre() : CIERRE_DEFECTO)
                 .createdAt(tenant.getCreatedAt())
                 .updatedAt(tenant.getUpdatedAt())
                 .build();

@@ -107,7 +107,7 @@ public class EspacioControlador {
     public ResponseEntity<EspacioResponseDto> actualizarEspacio(
             @PathVariable UUID id,
             @Valid @RequestBody EspacioRequestDto requestDto) {
-        EspacioResponseDto responseDto = espacioServicio.actualizarEspacio(requestDto);
+        EspacioResponseDto responseDto = espacioServicio.actualizarEspacio(id, requestDto);
         return ResponseEntity.ok(responseDto);
     }
 

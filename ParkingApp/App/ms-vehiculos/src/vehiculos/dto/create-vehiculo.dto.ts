@@ -14,27 +14,34 @@ import { MAX_YEAR } from '../../config/year.config';
     @IsString()
     @IsNotEmpty({ message: 'La marca no puede estar vacía' })
     @MinLength(2, { message: 'La marca debe tener al menos 2 caracteres' })
-    @MaxLength(15, { message: 'La marca no puede tener más de 15 caracteres' }) 
-    @Matches(/^[A-Za-z\s]+$/, {
-         message: 'La marca solo puede contener letras y espacios' })    
+    @MaxLength(15, { message: 'La marca no puede tener más de 15 caracteres' })
+    @Matches(/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/, {
+      message: 'La marca solo puede contener letras y espacios',
+    })
     marca!: string;
 
+    // El modelo SI admite numeros: "Mazda 3", "Serie 3", "Corolla 2020" o
+    // "208" son modelos reales. Antes usaba el mismo patron que la marca y
+    // rechazaba cualquier cifra.
     @IsString()
-      @IsNotEmpty({ message: 'La marca no puede estar vacía' })
-    @MinLength(2, { message: 'La marca debe tener al menos 2 caracteres' })
-    @MaxLength(20, { message: 'La marca no puede tener más de 20 caracteres' }) 
-    @Matches(/^[A-Za-z\s]+$/, {
-         message: 'La marca solo puede contener letras y espacios' })  
+    @IsNotEmpty({ message: 'El modelo no puede estar vacío' })
+    @MinLength(1, { message: 'El modelo debe tener al menos 1 caracter' })
+    @MaxLength(20, { message: 'El modelo no puede tener más de 20 caracteres' })
+    @Matches(/^[A-Za-z0-9][A-Za-z0-9\s.-]*$/, {
+      message: 'El modelo admite letras, números, espacios, puntos y guiones',
+    })
     modelo!: string;
-    
 
-
+    // El color es texto: los mensajes decian "marca" porque estaban copiados
+    // del campo de arriba, y al fallar el color el usuario leia un error sobre
+    // un campo que no habia tocado.
     @IsString()
-      @IsNotEmpty({ message: 'La marca no puede estar vacía' })
-    @MinLength(2, { message: 'La marca debe tener al menos 2 caracteres' })
-    @MaxLength(20, { message: 'el color no puede tener más de 20 caracteres' }) 
-    @Matches(/^[A-Za-z\s]+$/, {
-         message: 'La marca solo puede contener letras y espacios' })  
+    @IsNotEmpty({ message: 'El color no puede estar vacío' })
+    @MinLength(2, { message: 'El color debe tener al menos 2 caracteres' })
+    @MaxLength(20, { message: 'El color no puede tener más de 20 caracteres' })
+    @Matches(/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/, {
+      message: 'El color solo puede contener letras y espacios',
+    })
     color!: string;
     @IsNumber()
     @Min(1900, { message: 'El año debe ser mayor o igual a 1900' })

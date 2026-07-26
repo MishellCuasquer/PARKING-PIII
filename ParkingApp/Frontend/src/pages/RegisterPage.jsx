@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { tenantsApi, usersApi } from '../api/services';
 import { ErrorMsg, SuccessMsg } from '../components/Feedback';
+import { PATRON_NOMBRE, TITULO_NACIONALIDAD, TITULO_NOMBRE } from '../validaciones';
 
 const EMPTY = {
   dni: '',
@@ -100,15 +101,36 @@ export default function RegisterPage() {
           </label>
           <label>
             Primer nombre *
-            <input value={form.firstName} onChange={set('firstName')} maxLength={25} required />
+            <input
+              value={form.firstName}
+              onChange={set('firstName')}
+              maxLength={40}
+              pattern={PATRON_NOMBRE}
+              title={TITULO_NOMBRE}
+              required
+            />
           </label>
           <label>
             Segundo nombre
-            <input value={form.middleName} onChange={set('middleName')} maxLength={25} />
+            <input
+              value={form.middleName}
+              onChange={set('middleName')}
+              maxLength={40}
+              pattern={PATRON_NOMBRE}
+              title={TITULO_NOMBRE}
+            />
           </label>
           <label>
             Apellidos *
-            <input value={form.lastName} onChange={set('lastName')} maxLength={25} required />
+            <input
+              value={form.lastName}
+              onChange={set('lastName')}
+              maxLength={60}
+              pattern={PATRON_NOMBRE}
+              title={TITULO_NOMBRE}
+              placeholder="Cuasquer Chisaguano"
+              required
+            />
           </label>
           <label>
             Email *
@@ -124,7 +146,14 @@ export default function RegisterPage() {
           </label>
           <label>
             Nacionalidad
-            <input value={form.nationality} onChange={set('nationality')} placeholder="EC" />
+            <input
+              value={form.nationality}
+              onChange={set('nationality')}
+              maxLength={40}
+              pattern={PATRON_NOMBRE}
+              title={TITULO_NACIONALIDAD}
+              placeholder="Ecuatoriana"
+            />
           </label>
         </div>
 

@@ -15,7 +15,8 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "seed:vehiculos": "node scripts/seed-vehiculos.js",
-    "seed:tickets": "node scripts/seed-tickets.js"
+    "seed:tickets": "node scripts/seed-tickets.js",
+    "seed:tarifas": "node scripts/seed-tarifas.js"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

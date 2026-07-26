@@ -53,6 +53,11 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/**").permitAll()
+                        // Documentación OpenAPI: describe el contrato, no expone datos.
+                        // Tiene que ser pública o la propia UI de Swagger no puede
+                        // descargar el JSON que necesita para pintarse.
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
+                            .permitAll()
                         // Permitir acceso público para el monitoreo (solo GET list)
                         .requestMatchers(HttpMethod.GET, "/api/espacios").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/zonas").permitAll()

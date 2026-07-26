@@ -35,6 +35,19 @@ public class TenantController {
         return ResponseEntity.ok(tenantService.getById(id));
     }
 
+    /**
+     * Configuración operativa de una empresa (tarifa, moneda, horario).
+     *
+     * <p>Existe aparte de GET /{id} por una razón de permisos: el CRUD de
+     * empresas es exclusivo del SUPER_ADMIN, pero ms-tickets necesita leer la
+     * tarifa en cada cierre de ticket con su cuenta de servicio. Devuelve el
+     * mismo cuerpo; lo que cambia es quién puede llamarlo.</p>
+     */
+    @GetMapping("/{id}/configuracion")
+    public ResponseEntity<TenantResponse> getConfiguracion(@PathVariable UUID id) {
+        return ResponseEntity.ok(tenantService.getById(id));
+    }
+
     @PostMapping
     public ResponseEntity<TenantResponse> create(@Valid @RequestBody TenantRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(tenantService.create(request));

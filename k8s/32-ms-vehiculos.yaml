@@ -1,0 +1,100 @@
+# MS-Vehículos (NestJS + PostgreSQL + caché Redis).
+apiVersion: v1
+kind: Service
+metadata:
+  name: vehiculos
+  namespace: parqueadero
+  labels:
+    app: vehiculos
+spec:
+  type: ClusterIP
+  selector:
+    app: vehiculos
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vehiculos
+  namespace: parqueadero
+  labels:
+    app: vehiculos
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vehiculos
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: vehiculos
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: vehiculos
+          image: ghcr.io/mishellcuasquer/parking-piii/ms-vehiculos:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            # El contenedor corre como uid 1000 y /root no es escribible: sin
+            # esto npm falla al crear su caché antes de arrancar Nest.
+            - name: HOME
+              value: /tmp
+            - name: DB_NOMBRE
+              value: vehiculos_db
+            - name: DB_USUARIO
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: DB_USER }
+            - name: DB_CONTRASENA
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: DB_PASSWORD }
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: JWT_SECRET }
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: RABBITMQ_USER }
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: RABBITMQ_PASSWORD }
+          envFrom:
+            - configMapRef:
+                name: parqueadero-config
+          readinessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 45
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

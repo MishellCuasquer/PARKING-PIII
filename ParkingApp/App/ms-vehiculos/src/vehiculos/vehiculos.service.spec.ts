@@ -36,6 +36,8 @@ describe('VehiculosService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     cacheMock.get.mockResolvedValue(null);
+    // Por defecto la placa no está registrada en ninguna otra empresa
+    repoMock.find.mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         VehiculosService,
@@ -83,6 +85,76 @@ describe('VehiculosService', () => {
         ConflictException,
       );
       expect(repoMock.save).not.toHaveBeenCalled();
+    });
+
+    it('rechaza la placa si otra empresa la registró con otras características', async () => {
+      repoMock.findOne.mockResolvedValue(null);
+      repoMock.find.mockResolvedValue([
+        {
+          id: '9',
+          placa: 'ABC-1234',
+          tenantId: 'tenant-2',
+          marca: 'Toyota',
+          modelo: 'Corolla',
+          color: 'Azul',
+          anio: 2024,
+        },
+      ]);
+
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(repoMock.save).not.toHaveBeenCalled();
+    });
+
+    it('permite registrar la placa en otra empresa si las características coinciden', async () => {
+      const saved = { id: '1', placa: 'ABC-1234', tenantId: TENANT };
+      repoMock.findOne.mockResolvedValue(null);
+      repoMock.find.mockResolvedValue([
+        {
+          id: '9',
+          placa: 'ABC-1234',
+          tenantId: 'tenant-2',
+          marca: 'Toyota',
+          modelo: 'Corolla',
+          color: 'Rojo',
+          anio: 2024,
+        },
+      ]);
+      repoMock.save.mockResolvedValue(saved);
+
+      await expect(service.create(createDto, TENANT)).resolves.toBe(saved);
+    });
+  });
+
+  describe('consultarPlacaGlobal', () => {
+    it('devuelve encontrado=false cuando la placa no existe en ninguna empresa', async () => {
+      repoMock.findOne.mockResolvedValue(null);
+
+      await expect(service.consultarPlacaGlobal('ZZZ-9999')).resolves.toEqual({
+        encontrado: false,
+      });
+    });
+
+    it('devuelve las características sin exponer id ni tenant', async () => {
+      repoMock.findOne.mockResolvedValue({
+        id: '9',
+        tenantId: 'tenant-2',
+        placa: 'ABC-1234',
+        marca: 'Toyota',
+        color: 'Rojo',
+      });
+
+      const result = await service.consultarPlacaGlobal('ABC-1234');
+
+      expect(result.encontrado).toBe(true);
+      expect(result.datos).toEqual({
+        placa: 'ABC-1234',
+        marca: 'Toyota',
+        color: 'Rojo',
+      });
+      expect(result.datos).not.toHaveProperty('id');
+      expect(result.datos).not.toHaveProperty('tenantId');
     });
   });
 

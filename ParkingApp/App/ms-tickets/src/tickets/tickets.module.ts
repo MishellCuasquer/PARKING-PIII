@@ -7,10 +7,17 @@ import { Ticket } from './entities/ticket.entity';
 import { AuthModule } from '../auth/auth.module';
 import { EventPublisher } from '../common/event-publisher.service';
 import { CacheService } from '../common/cache.service';
+import { TenantConfigService } from '../common/tenant-config.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Ticket]), AuthModule],
   controllers: [TicketsController],
-  providers: [TicketsService, HttpClientService, EventPublisher, CacheService],
+  providers: [
+    TicketsService,
+    HttpClientService,
+    EventPublisher,
+    CacheService,
+    TenantConfigService,
+  ],
 })
 export class TicketsModule {}

@@ -1,0 +1,11 @@
+# El Dockerfile hace `npm ci` y luego `COPY . .`: sin esta exclusión, el
+# node_modules del host pisaría el que acaba de instalar la imagen (y en Windows
+# trae binarios nativos que no sirven en Alpine).
+node_modules
+dist
+coverage
+test
+.git
+*.log
+Dockerfile
+.dockerignore

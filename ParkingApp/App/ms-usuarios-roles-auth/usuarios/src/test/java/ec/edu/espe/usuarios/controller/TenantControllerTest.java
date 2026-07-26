@@ -29,6 +29,21 @@ class TenantControllerTest {
     private final TenantResponse ejemplo = TenantResponse.builder()
             .id(UUID.randomUUID()).nombre("Norte").codigo("NORTE").activo(true).build();
 
+    /**
+     * Es el endpoint que consume ms-tickets con su cuenta de servicio para
+     * cobrar segun la tarifa de cada empresa.
+     */
+    @Test
+    void getConfiguracion_devuelveLaConfiguracionDeLaEmpresa() {
+        UUID id = ejemplo.getId();
+        when(tenantService.getById(id)).thenReturn(ejemplo);
+
+        var response = controller.getConfiguracion(id);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo(ejemplo);
+    }
+
     @Test
     void getPublicos_devuelveLosTenantsActivos() {
         when(tenantService.getPublicos()).thenReturn(List.of(ejemplo));

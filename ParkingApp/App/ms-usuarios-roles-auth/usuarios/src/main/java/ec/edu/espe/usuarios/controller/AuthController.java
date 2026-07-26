@@ -1,9 +1,13 @@
 package ec.edu.espe.usuarios.controller;
 
 import ec.edu.espe.usuarios.dto.request.LoginRequest;
+import ec.edu.espe.usuarios.dto.request.RecuperarPasswordRequest;
+import ec.edu.espe.usuarios.dto.request.RestablecerPasswordRequest;
 import ec.edu.espe.usuarios.dto.response.EmpresaDisponibleResponse;
 import ec.edu.espe.usuarios.dto.response.LoginResponse;
+import ec.edu.espe.usuarios.dto.response.RecuperarPasswordResponse;
 import ec.edu.espe.usuarios.service.AuthService;
+import ec.edu.espe.usuarios.service.PasswordResetService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,6 +26,26 @@ import java.util.UUID;
 public class AuthController {
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
+
+    /**
+     * Paso 1 de la recuperación: pide el enlace. Devuelve 200 y el mismo
+     * mensaje exista o no el correo, para no revelar qué correos están
+     * registrados en la plataforma.
+     */
+    @PostMapping("/recuperar-password")
+    public ResponseEntity<RecuperarPasswordResponse> recuperarPassword(
+            @Valid @RequestBody RecuperarPasswordRequest request) {
+        return ResponseEntity.ok(passwordResetService.solicitar(request));
+    }
+
+    /** Paso 2: consume el token y fija la nueva contraseña. */
+    @PostMapping("/restablecer-password")
+    public ResponseEntity<Map<String, String>> restablecerPassword(
+            @Valid @RequestBody RestablecerPasswordRequest request) {
+        passwordResetService.restablecer(request);
+        return ResponseEntity.ok(Map.of("message", "Contraseña actualizada correctamente"));
+    }
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest loginRequest) {

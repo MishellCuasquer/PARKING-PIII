@@ -8,6 +8,10 @@ import { FactoryVehiculos } from './factory/factory-vehiculos';
 import { AuditEvent, EventPublisher } from '../common/event-publisher.service';
 import { CacheService } from '../common/cache.service';
 
+// Un mismo carro físico puede estar registrado en varias empresas, pero sus
+// características técnicas son las mismas en todas: se validan al crear/editar.
+const CARACTERISTICAS = ['marca', 'modelo', 'color', 'anio', 'clasificacion'] as const;
+
 @Injectable()
 export class VehiculosService {
 
@@ -29,6 +33,79 @@ private cacheKey(tenantId: string | null, placa: string): string {
   return `t:${tenantId ?? 'global'}:vehiculo:${placa}`;
 }
 
+// Tipo de vehículo tal como lo maneja el formulario (auto/moto/camioneta)
+private tipoFormulario(vehiculo: Vehiculo): string | undefined {
+  const tipo = typeof vehiculo.obtenerTipo === 'function' ? vehiculo.obtenerTipo() : undefined;
+  switch (tipo) {
+    case 'Auto': return 'auto';
+    case 'Moto': return 'moto';
+    case 'Camioneta': return 'camioneta';
+    default: return undefined;
+  }
+}
+
+// Mismo carro físico ya registrado por otra empresa (misma placa, tenant distinto)
+private async otraEmpresaConPlaca(placa: string, tenantId: string | null): Promise<Vehiculo | null> {
+  const registros = await this.vehiculoRepository.find({ where: { placa } });
+  return registros.find((v) => (v.tenantId ?? null) !== (tenantId ?? null)) ?? null;
+}
+
+private normalizar(valor: unknown): string {
+  return String(valor ?? '').trim().toLowerCase();
+}
+
+// Devuelve la lista de características que no coinciden con el registro existente
+private compararCaracteristicas(
+  existente: Vehiculo,
+  valores: Record<string, any>,
+  tipoNuevo?: string,
+): string[] {
+  const diferencias: string[] = [];
+  const tipoExistente = this.tipoFormulario(existente);
+  if (tipoNuevo && tipoExistente && tipoExistente !== tipoNuevo.toLowerCase()) {
+    diferencias.push(`tipo: registrado como "${tipoExistente}"`);
+  }
+  for (const campo of CARACTERISTICAS) {
+    const actual = (existente as any)[campo];
+    const nuevo = valores[campo];
+    if (nuevo !== undefined && this.normalizar(actual) !== this.normalizar(nuevo)) {
+      diferencias.push(`${campo}: registrado como "${actual}"`);
+    }
+  }
+  return diferencias;
+}
+
+private validarCoherencia(existente: Vehiculo, placa: string, diferencias: string[]) {
+  if (diferencias.length > 0) {
+    throw new ConflictException({
+      message:
+        `La placa ${placa} ya está registrada en otra empresa con otras características. ` +
+        'Use "Confirmar datos" para traer los datos registrados.',
+      diferencias,
+    });
+  }
+}
+
+/**
+ * Consulta la placa en todas las empresas para autocompletar el formulario.
+ * Devuelve solo las características del vehículo: nunca el id, el tenant ni
+ * datos de la empresa que lo registró.
+ */
+async consultarPlacaGlobal(placa: string): Promise<{
+  encontrado: boolean;
+  tipoVehiculo?: string;
+  datos?: Record<string, any>;
+}> {
+  const vehiculo = await this.vehiculoRepository.findOne({ where: { placa } });
+  if (!vehiculo) {
+    return { encontrado: false };
+  }
+  const datos: Record<string, any> = { ...vehiculo };
+  delete datos.id;
+  delete datos.tenantId;
+  return { encontrado: true, tipoVehiculo: this.tipoFormulario(vehiculo), datos };
+}
+
 // Método auxiliar para publicar eventos
   private async emitEvent(accion: string, vehiculo: Vehiculo, tenantId?: string | null, userId?: string, ip?: string, datosExtra?: any) {
     const event: AuditEvent = {
@@ -48,6 +125,14 @@ async create(createVehiculoDto: CreateVehiculoDto, tenantId: string | null, user
     where: { placa: createVehiculoDto.datos.placa, tenantId: this.tenantWhere(tenantId) } });
   if (existe) {
     throw new ConflictException('Vehículo ya existe con esta placa' );
+  }
+  const registrado = await this.otraEmpresaConPlaca(createVehiculoDto.datos.placa, tenantId);
+  if (registrado) {
+    this.validarCoherencia(
+      registrado,
+      createVehiculoDto.datos.placa,
+      this.compararCaracteristicas(registrado, createVehiculoDto.datos as any, createVehiculoDto.tipo),
+    );
   }
   const vehiculo = FactoryVehiculos.crear(createVehiculoDto);
   vehiculo.tenantId = tenantId;
@@ -87,8 +172,21 @@ async create(createVehiculoDto: CreateVehiculoDto, tenantId: string | null, user
   async update(id: string, updateVehiculoDto: UpdateVehiculoDto, tenantId: string | null, userId?: string, ip?: string): Promise<Vehiculo> {
     const vehiculo = await this.findOne(id, tenantId);
     const placaAnterior = vehiculo.placa;
-    // Actualizar solo los campos proporcionados
-    Object.assign(vehiculo, updateVehiculoDto);
+    // Actualizar solo los campos proporcionados: el DTO trae como undefined los
+    // que no se enviaron y copiarlos borraría los valores actuales de la entidad
+    const cambios = Object.fromEntries(
+      Object.entries(updateVehiculoDto).filter(([, valor]) => valor !== undefined),
+    );
+    Object.assign(vehiculo, cambios);
+    // La edición tampoco puede dejar la misma placa con datos distintos en otra empresa
+    const registrado = await this.otraEmpresaConPlaca(vehiculo.placa, tenantId);
+    if (registrado) {
+      this.validarCoherencia(
+        registrado,
+        vehiculo.placa,
+        this.compararCaracteristicas(registrado, vehiculo as any),
+      );
+    }
     const updated = await this.vehiculoRepository.save(vehiculo);
     // Recargar el vehículo para obtener todos los campos correctamente
     const reloaded = await this.findOne(updated.id, tenantId);

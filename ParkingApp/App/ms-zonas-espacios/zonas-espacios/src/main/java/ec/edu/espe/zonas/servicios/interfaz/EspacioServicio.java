@@ -14,7 +14,7 @@ public interface EspacioServicio {
 
     EspacioResponseDto crearEspacio(EspacioRequestDto requestDto);
 
-    EspacioResponseDto actualizarEspacio(EspacioRequestDto requestDto);
+    EspacioResponseDto actualizarEspacio(UUID id, EspacioRequestDto requestDto);
 
     void eliminarEspacio(String id);
 

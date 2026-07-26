@@ -28,14 +28,17 @@ public class Person {
     @Column(nullable = false, length = 25)
     private String dni;
 
-    @Column(nullable = false, length = 25)
+    // 25 caracteres no daban para dos apellidos ("Cuasquer Chisaguano" ya son
+    // 19 y con tildes o un apellido compuesto se desborda). Ampliar una columna
+    // VARCHAR es seguro con ddl-auto=update: Hibernate la alarga sin perder datos.
+    @Column(nullable = false, length = 40)
     private String firstName;
 
     @Builder.Default
-    @Column(nullable = false, length = 25)
+    @Column(nullable = false, length = 40)
     private String middleName ="";
 
-    @Column(nullable = false, length = 25)
+    @Column(nullable = false, length = 60)
     private String lastName;
 
     @Column(nullable = false, length = 100)
@@ -52,7 +55,7 @@ public class Person {
     @Column(columnDefinition = "TEXT")
     private String address;
 
-    @Column(nullable = false, length = 25)
+    @Column(nullable = false, length = 40)
     private String nationality;
 
     @Builder.Default

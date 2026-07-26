@@ -1,0 +1,100 @@
+# MS-Usuarios: usuarios, roles, tenants y emisión de JWT (Spring Boot).
+# Es el emisor de los tokens que validan todos los demás servicios y Kong.
+apiVersion: v1
+kind: Service
+metadata:
+  name: usuarios
+  namespace: parqueadero
+  labels:
+    app: usuarios
+spec:
+  type: ClusterIP
+  selector:
+    app: usuarios
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: usuarios
+  namespace: parqueadero
+  labels:
+    app: usuarios
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: usuarios
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: usuarios
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: usuarios
+          image: ghcr.io/mishellcuasquer/parking-piii/ms-usuarios:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: DB_URL
+              value: jdbc:postgresql://postgres:5432/usuarios_db
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: DB_USER }
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: DB_PASSWORD }
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: JWT_SECRET }
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: RABBITMQ_USER }
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: RABBITMQ_PASSWORD }
+          envFrom:
+            - configMapRef:
+                name: parqueadero-config
+          # Sondas TCP: los servicios no exponen /actuator/health y cualquier
+          # ruta HTTP real devolvería 401 (todo pasa por el filtro JWT), lo que
+          # dejaría al pod eternamente "not ready".
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 90
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

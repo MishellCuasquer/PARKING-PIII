@@ -1,9 +1,13 @@
 package ec.edu.espe.usuarios.controller;
 
 import ec.edu.espe.usuarios.dto.request.LoginRequest;
+import ec.edu.espe.usuarios.dto.request.RecuperarPasswordRequest;
+import ec.edu.espe.usuarios.dto.request.RestablecerPasswordRequest;
 import ec.edu.espe.usuarios.dto.response.EmpresaDisponibleResponse;
 import ec.edu.espe.usuarios.dto.response.LoginResponse;
+import ec.edu.espe.usuarios.dto.response.RecuperarPasswordResponse;
 import ec.edu.espe.usuarios.service.AuthService;
+import ec.edu.espe.usuarios.service.PasswordResetService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -28,10 +32,40 @@ class AuthControllerTest {
     @Mock
     private AuthService authService;
     @Mock
+    private PasswordResetService passwordResetService;
+    @Mock
     private Authentication authentication;
 
     @InjectMocks
     private AuthController controller;
+
+    @Test
+    void recuperarPassword_delegaEnElServicioYDevuelveElMensajeGenerico() {
+        RecuperarPasswordRequest request = new RecuperarPasswordRequest();
+        request.setEmail("ana@espe.edu.ec");
+        RecuperarPasswordResponse esperado = RecuperarPasswordResponse.builder()
+                .mensaje("Si el correo está registrado, se ha enviado un enlace para restablecer la contraseña.")
+                .build();
+        when(passwordResetService.solicitar(request)).thenReturn(esperado);
+
+        var response = controller.recuperarPassword(request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo(esperado);
+    }
+
+    @Test
+    void restablecerPassword_consumeElTokenYConfirma() {
+        RestablecerPasswordRequest request = new RestablecerPasswordRequest();
+        request.setToken("token-valido");
+        request.setNuevaPassword("claveNueva123");
+
+        var response = controller.restablecerPassword(request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("message", "Contraseña actualizada correctamente");
+        verify(passwordResetService).restablecer(request);
+    }
 
     @Test
     void login_delegaEnElServicio() {

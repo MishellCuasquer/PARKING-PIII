@@ -34,4 +34,7 @@ public interface PersonRepository extends JpaRepository<Person, UUID> {
 
     // Mismo dueño en varias empresas: el email se repite entre tenants
     List<Person> findAllByEmail(String email);
+
+    // Igual que el email, el mismo DNI puede estar en varias empresas
+    List<Person> findAllByDni(String dni);
 }

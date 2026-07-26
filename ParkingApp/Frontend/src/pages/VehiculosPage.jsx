@@ -11,6 +11,8 @@ const EXTRA = {
   moto: { tipo: 'Deportiva' },
   camioneta: { cabina: 'Simple', capacidadCarga: 500 },
 };
+const TIPOS_MOTO = ['Deportiva'];
+const NUMERICOS = ['anio', 'numeroPuertas', 'CapacidadMaletero', 'capacidadCarga'];
 
 export default function VehiculosPage() {
   const { hasRole } = useAuth();
@@ -24,6 +26,8 @@ export default function VehiculosPage() {
   const [editando, setEditando] = useState(null);
   const [error, setError] = useState(null);
   const [msg, setMsg] = useState(null);
+  // Cuando la placa ya existe en otra empresa, sus características no se pueden cambiar aquí
+  const [bloqueado, setBloqueado] = useState(false);
 
   const load = () => {
     if (!canList) return;
@@ -36,11 +40,55 @@ export default function VehiculosPage() {
 
   const cambiarTipo = (t) => {
     setTipo(t);
+    setBloqueado(false);
     setForm({ ...BASE, placa: form.placa, marca: form.marca, modelo: form.modelo, color: form.color, anio: form.anio, clasificacion: form.clasificacion, ...EXTRA[t] });
   };
 
   const set = (field, numeric = false) => (e) =>
     setForm({ ...form, [field]: numeric ? Number(e.target.value) : e.target.value });
+
+  const cambiarPlaca = (valor) => {
+    // Al cambiar la placa se invalida la confirmación anterior
+    setBloqueado(false);
+    setForm({ ...form, placa: valor.toUpperCase() });
+  };
+
+  /**
+   * Busca la placa en todas las empresas: si el carro ya está registrado trae sus
+   * características y las deja fijas, para que la misma placa no termine con
+   * datos distintos en cada parqueadero.
+   */
+  const handleConfirmar = async () => {
+    const placa = form.placa.trim().toUpperCase();
+    if (!placa) {
+      setError('Ingrese la placa antes de confirmar los datos');
+      return;
+    }
+    setError(null);
+    setMsg(null);
+    try {
+      const res = await vehiculosApi.consultaPlaca(placa);
+      if (!res.encontrado) {
+        setBloqueado(false);
+        setMsg(`La placa ${placa} no está registrada. Complete las características.`);
+        return;
+      }
+      const t = EXTRA[res.tipoVehiculo] ? res.tipoVehiculo : tipo;
+      const permitidos = Object.keys({ ...BASE, ...EXTRA[t] });
+      const datos = {};
+      for (const [campo, valor] of Object.entries(res.datos || {})) {
+        if (!permitidos.includes(campo) || valor === null || valor === undefined) continue;
+        if (campo === 'tipo' && !TIPOS_MOTO.includes(valor)) continue;
+        datos[campo] = NUMERICOS.includes(campo) ? Number(valor) : valor;
+      }
+      setTipo(t);
+      setForm({ ...BASE, ...EXTRA[t], ...datos, placa });
+      setBloqueado(true);
+      setMsg(`La placa ${placa} ya está registrada en el sistema: se completaron sus características.`);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -51,6 +99,7 @@ export default function VehiculosPage() {
       await vehiculosApi.create({ tipo, datos });
       setMsg(`Vehículo ${form.placa} registrado`);
       setForm({ ...BASE, ...EXTRA[tipo] });
+      setBloqueado(false);
       load();
     } catch (err) {
       setError(err.message);
@@ -135,6 +184,7 @@ export default function VehiculosPage() {
               type="button"
               className={`tab${tipo === t ? ' active' : ''}`}
               onClick={() => cambiarTipo(t)}
+              disabled={bloqueado}
             >
               {t === 'auto' ? '🚗 Auto' : t === 'moto' ? '🏍 Moto' : '🛻 Camioneta'}
             </button>
@@ -146,30 +196,41 @@ export default function VehiculosPage() {
             Placa * <small className="muted">({tipo === 'moto' ? 'AB-1234' : 'ABC-1234'})</small>
             <input
               value={form.placa}
-              onChange={(e) => setForm({ ...form, placa: e.target.value.toUpperCase() })}
+              onChange={(e) => cambiarPlaca(e.target.value)}
               pattern={tipo === 'moto' ? '[A-Z]{2}-[0-9]{4}' : '[A-Z]{3}-[0-9]{4}'}
               required
             />
           </label>
+          <div className="form-row">
+            <button type="button" className="btn" onClick={handleConfirmar}>
+              🔍 Confirmar datos
+            </button>
+          </div>
+          {bloqueado && (
+            <p className="muted">
+              Este vehículo ya está registrado en el sistema. Sus características no se pueden
+              cambiar desde aquí para que sean iguales en todas las empresas.
+            </p>
+          )}
           <label>
             Marca *
-            <input value={form.marca} onChange={set('marca')} minLength={2} maxLength={15} required />
+            <input value={form.marca} onChange={set('marca')} minLength={2} maxLength={15} readOnly={bloqueado} required />
           </label>
           <label>
             Modelo *
-            <input value={form.modelo} onChange={set('modelo')} minLength={2} maxLength={20} required />
+            <input value={form.modelo} onChange={set('modelo')} minLength={2} maxLength={20} readOnly={bloqueado} required />
           </label>
           <label>
             Color *
-            <input value={form.color} onChange={set('color')} minLength={2} maxLength={20} required />
+            <input value={form.color} onChange={set('color')} minLength={2} maxLength={20} readOnly={bloqueado} required />
           </label>
           <label>
             Año *
-            <input type="number" min={1900} value={form.anio} onChange={set('anio', true)} required />
+            <input type="number" min={1900} value={form.anio} onChange={set('anio', true)} readOnly={bloqueado} required />
           </label>
           <label>
             Clasificación *
-            <select value={form.clasificacion} onChange={set('clasificacion')}>
+            <select value={form.clasificacion} onChange={set('clasificacion')} disabled={bloqueado}>
               {CLASIFICACIONES.map((c) => (
                 <option key={c}>{c}</option>
               ))}
@@ -180,11 +241,11 @@ export default function VehiculosPage() {
             <>
               <label>
                 N° puertas *
-                <input type="number" min={2} max={5} value={form.numeroPuertas} onChange={set('numeroPuertas', true)} required />
+                <input type="number" min={2} max={5} value={form.numeroPuertas} onChange={set('numeroPuertas', true)} readOnly={bloqueado} required />
               </label>
               <label>
                 Maletero (litros) *
-                <input type="number" min={100} max={1000} value={form.CapacidadMaletero} onChange={set('CapacidadMaletero', true)} required />
+                <input type="number" min={100} max={1000} value={form.CapacidadMaletero} onChange={set('CapacidadMaletero', true)} readOnly={bloqueado} required />
               </label>
             </>
           )}
@@ -192,7 +253,7 @@ export default function VehiculosPage() {
           {tipo === 'moto' && (
             <label>
               Tipo de moto *
-              <select value={form.tipo} onChange={set('tipo')}>
+              <select value={form.tipo} onChange={set('tipo')} disabled={bloqueado}>
                 <option>Deportiva</option>
               </select>
             </label>
@@ -202,11 +263,11 @@ export default function VehiculosPage() {
             <>
               <label>
                 Cabina *
-                <input value={form.cabina} onChange={set('cabina')} minLength={3} maxLength={20} required />
+                <input value={form.cabina} onChange={set('cabina')} minLength={3} maxLength={20} readOnly={bloqueado} required />
               </label>
               <label>
                 Capacidad de carga *
-                <input type="number" min={0.1} max={10000} step="0.1" value={form.capacidadCarga} onChange={set('capacidadCarga', true)} required />
+                <input type="number" min={0.1} max={10000} step="0.1" value={form.capacidadCarga} onChange={set('capacidadCarga', true)} readOnly={bloqueado} required />
               </label>
             </>
           )}

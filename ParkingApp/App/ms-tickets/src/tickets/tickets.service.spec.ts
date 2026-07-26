@@ -8,6 +8,7 @@ import { HttpClientService } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 import { EventPublisher } from '../common/event-publisher.service';
 import { CacheService } from '../common/cache.service';
+import { TenantConfigService } from '../common/tenant-config.service';
 
 describe('TicketsService', () => {
   let service: TicketsService;
@@ -25,6 +26,11 @@ describe('TicketsService', () => {
   const serviceTokenMock = { getServiceToken: jest.fn() };
   const publisherMock = { publishEvent: jest.fn() };
   const cacheMock = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
+  // La tarifa ya no sale del entorno sino de la configuración de la empresa.
+  // La plataforma opera en dólares: 2.00 USD/h es el mismo valor que tenía
+  // TARIFA_HORA, así que las aserciones de importe de los tests existentes
+  // siguen valiendo.
+  const tenantConfigMock = { getTarifaHora: jest.fn(), getConfig: jest.fn() };
 
   const configValues: Record<string, string> = {
     MS_PERSONA: 'http://ms-personas/api/personas',
@@ -42,6 +48,7 @@ describe('TicketsService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     cacheMock.get.mockResolvedValue(null);
+    tenantConfigMock.getTarifaHora.mockResolvedValue(2);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TicketsService,
@@ -54,6 +61,7 @@ describe('TicketsService', () => {
         { provide: ServiceTokenService, useValue: serviceTokenMock },
         { provide: EventPublisher, useValue: publisherMock },
         { provide: CacheService, useValue: cacheMock },
+        { provide: TenantConfigService, useValue: tenantConfigMock },
       ],
     }).compile();
 
@@ -75,6 +83,74 @@ describe('TicketsService', () => {
       httpClientMock.get.mockImplementationOnce((url: string) =>
         url.includes('personas') ? Promise.resolve(persona) : Promise.resolve(null),
       );
+    });
+
+    // Compatibilidad vehículo <-> espacio: un auto no cabe en una plaza de moto.
+    const prepararCreate = (vehiculoMock: any, espacioMock: any) => {
+      httpClientMock.get.mockReset();
+      httpClientMock.get.mockImplementation((url: string) => {
+        if (url.includes('/personas/')) return Promise.resolve(persona);
+        if (url.includes('/vehiculos')) return Promise.resolve(vehiculoMock);
+        if (url.includes('/espacios/')) return Promise.resolve(espacioMock);
+        return Promise.resolve(null);
+      });
+      repoMock.findOne.mockResolvedValue(null);
+      repoMock.create.mockReturnValue({ id: 't1' });
+      repoMock.save.mockResolvedValue({ id: 't1' });
+    };
+
+    it('rechaza meter un auto en un espacio de moto', async () => {
+      prepararCreate(
+        { placa: 'ABC-1234', tipo: 'auto' },
+        { ...espacioDisponible, tipoEspacio: 'MOTO' },
+      );
+
+      await expect(service.create(createDto, TENANT, 'Bearer token')).rejects.toThrow(
+        BadRequestException,
+      );
+      // El espacio no debe quedar ocupado por un intento inválido
+      expect(httpClientMock.put).not.toHaveBeenCalled();
+    });
+
+    it('rechaza meter una moto en un espacio de auto', async () => {
+      prepararCreate(
+        { placa: 'AB-1234', tipo: 'moto' },
+        { ...espacioDisponible, tipoEspacio: 'AUTO' },
+      );
+
+      await expect(service.create(createDto, TENANT, 'Bearer token')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('permite un auto en un espacio de auto', async () => {
+      prepararCreate(
+        { placa: 'ABC-1234', tipo: 'auto' },
+        { ...espacioDisponible, tipoEspacio: 'AUTO' },
+      );
+
+      await expect(service.create(createDto, TENANT, 'Bearer token')).resolves.toBeDefined();
+    });
+
+    // Una camioneta cabe tanto en plaza de auto como de camión.
+    it.each([['AUTO'], ['CAMION']])(
+      'permite una camioneta en un espacio %s',
+      async (tipoEspacio) => {
+        prepararCreate(
+          { placa: 'ABC-1234', tipo: 'camioneta' },
+          { ...espacioDisponible, tipoEspacio },
+        );
+
+        await expect(service.create(createDto, TENANT, 'Bearer token')).resolves.toBeDefined();
+      },
+    );
+
+    // Datos anteriores a que se expusiera tipoEspacio: no se puede bloquear a
+    // vehículos ya registrados por un campo que antes no existía.
+    it('deja pasar cuando el espacio no declara tipo', async () => {
+      prepararCreate({ placa: 'ABC-1234', tipo: 'auto' }, { ...espacioDisponible });
+
+      await expect(service.create(createDto, TENANT, 'Bearer token')).resolves.toBeDefined();
     });
 
     it('crea el ticket cuando persona, placa y espacio son válidos', async () => {
@@ -137,9 +213,28 @@ describe('TicketsService', () => {
         if (url.includes('/espacios/')) return Promise.resolve(espacioDisponible);
         return Promise.resolve(null);
       });
-      repoMock.findOne.mockResolvedValue({ id: 'activo', activo: true });
+      repoMock.findOne.mockResolvedValue({ id: 'activo', activo: true, tenantId: TENANT });
 
       await expect(service.create(createDto, TENANT)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rechaza el ingreso si el vehículo está dentro de otro parqueadero', async () => {
+      httpClientMock.get.mockImplementation((url: string) => {
+        if (url.includes('/personas/')) return Promise.resolve(persona);
+        if (url.includes('/vehiculos')) return Promise.resolve(vehiculo);
+        if (url.includes('/espacios/')) return Promise.resolve(espacioDisponible);
+        return Promise.resolve(null);
+      });
+      // Ticket activo de la misma placa pero en OTRA empresa
+      repoMock.findOne.mockResolvedValue({ id: 'activo', activo: true, tenantId: 'otro-tenant' });
+
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(
+        /está dentro de otro parqueadero/,
+      );
+      // El ticket activo se busca sin filtrar por empresa
+      expect(repoMock.findOne).toHaveBeenCalledWith({
+        where: { placa: createDto.placa, activo: true },
+      });
     });
   });
 
@@ -208,7 +303,8 @@ describe('TicketsService', () => {
       );
 
       expect(result.activo).toBe(false);
-      expect(result.valorRecaudo).toBe(6);
+      // 2 h 30 min a 2.00 USD/h = 5.00 (la fracción se cobra proporcional)
+      expect(result.valorRecaudo).toBe(5);
       expect(httpClientMock.put).toHaveBeenCalledWith(
         expect.stringContaining('estado=DISPONIBLE'),
         'Bearer token',
@@ -216,6 +312,81 @@ describe('TicketsService', () => {
       expect(publisherMock.publishEvent).toHaveBeenCalledWith(
         expect.objectContaining({ accion: 'UPDATE' }),
       );
+    });
+
+    // --- Cobro proporcional de la fracción, a 1.00 USD/h ---
+    // Quien se queda hora y media paga hora y media, no dos horas.
+    it.each([
+      ['1 hora exacta', '2026-01-01T11:00:00Z', 1],
+      ['1 hora y media', '2026-01-01T11:30:00Z', 1.5],
+      ['1 hora y cuarto', '2026-01-01T11:15:00Z', 1.25],
+      ['2 horas y media', '2026-01-01T12:30:00Z', 2.5],
+      ['3 horas y 20 min', '2026-01-01T13:20:00Z', 3.33],
+    ])('cobra %s de forma proporcional', async (_caso, salida, esperado) => {
+      repoMock.findOne.mockResolvedValue({ ...ticketActivo, tenantId: TENANT });
+      repoMock.save.mockImplementation((t) => Promise.resolve(t));
+      tenantConfigMock.getTarifaHora.mockResolvedValue(1);
+
+      const result = await service.cerrarTicket(
+        '1',
+        { fechhaHoraSalida: salida } as any,
+        TENANT,
+        'Bearer token',
+        'cobrador1',
+      );
+
+      expect(result.valorRecaudo).toBe(esperado);
+    });
+
+    // Tarifa mínima: una estancia corta paga la hora completa igualmente.
+    it('aplica el mínimo de 1 hora en estancias de pocos minutos', async () => {
+      repoMock.findOne.mockResolvedValue({ ...ticketActivo, tenantId: TENANT });
+      repoMock.save.mockImplementation((t) => Promise.resolve(t));
+      tenantConfigMock.getTarifaHora.mockResolvedValue(1);
+
+      const result = await service.cerrarTicket(
+        '1',
+        { fechhaHoraSalida: '2026-01-01T10:10:00Z' } as any,
+        TENANT,
+        'Bearer token',
+        'cobrador1',
+      );
+
+      expect(result.valorRecaudo).toBe(1);
+    });
+
+    // El corazón del modelo SaaS: la misma infraestructura, dos precios.
+    it('cobra según la tarifa de la empresa dueña del ticket, no una global', async () => {
+      repoMock.findOne.mockResolvedValue({ ...ticketActivo, tenantId: 'empresa-cara' });
+      repoMock.save.mockImplementation((t) => Promise.resolve(t));
+      tenantConfigMock.getTarifaHora.mockResolvedValue(5);
+
+      const result = await service.cerrarTicket(
+        '1',
+        { fechhaHoraSalida: '2026-01-01T12:30:00Z' } as any,
+        'empresa-cara',
+        'Bearer token',
+        'cobrador1',
+      );
+
+      // 2 h 30 min x 5.00 USD/h = 12.50 (con tarifa 2.00 serían 5.00)
+      expect(result.valorRecaudo).toBe(12.5);
+      expect(tenantConfigMock.getTarifaHora).toHaveBeenCalledWith('empresa-cara');
+    });
+
+    it('usa la tarifa de respaldo cuando el ticket no tiene empresa (datos legacy)', async () => {
+      repoMock.findOne.mockResolvedValue({ ...ticketActivo, tenantId: null });
+      repoMock.save.mockImplementation((t) => Promise.resolve(t));
+
+      await service.cerrarTicket(
+        '1',
+        { fechhaHoraSalida: '2026-01-01T12:30:00Z' } as any,
+        null,
+        'Bearer token',
+        'cobrador1',
+      );
+
+      expect(tenantConfigMock.getTarifaHora).toHaveBeenCalledWith(null);
     });
 
     it('lanza BadRequestException si el ticket ya está cerrado', async () => {

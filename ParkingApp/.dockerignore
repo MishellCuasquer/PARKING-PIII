@@ -1,0 +1,20 @@
+# Este .dockerignore aplica solo a las builds cuyo contexto es ParkingApp/,
+# es decir Kong (docker/kong/Dockerfile) y RabbitMQ (docker/rabbitmq/Dockerfile).
+# Ambas necesitan apenas un par de archivos de configuración, así que se excluye
+# todo lo pesado: sin esto el contexto arrastra cientos de MB de node_modules.
+node_modules
+**/node_modules
+**/target
+**/dist
+**/coverage
+.git
+.idea
+*.log
+Frontend
+monitoreo
+ms-audit
+scripts
+App/ms-vehiculos
+App/ms-tickets
+App/ms-usuarios-roles-auth
+App/ms-zonas-espacios

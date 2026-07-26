@@ -2,7 +2,16 @@ import { useEffect, useState } from 'react';
 import { tenantsApi } from '../api/services';
 import { ErrorMsg, SuccessMsg } from '../components/Feedback';
 
-const EMPTY = { nombre: '', codigo: '' };
+// Cada empresa configura su propia tarifa y su propio horario: es lo que
+// convierte la plataforma en un SaaS y no en una instalación por cliente.
+const EMPTY = {
+  nombre: '',
+  codigo: '',
+  tarifaHora: '1.00',
+  moneda: 'USD',
+  horaApertura: '00:00',
+  horaCierre: '23:59',
+};
 
 // Solo visible para SUPER_ADMIN: administra las empresas/parqueaderos (tenants)
 export default function TenantsPage() {
@@ -25,7 +34,14 @@ export default function TenantsPage() {
     setMsg(null);
     setLoading(true);
     try {
-      const payload = { nombre: form.nombre.trim(), codigo: form.codigo.trim().toUpperCase() };
+      const payload = {
+        nombre: form.nombre.trim(),
+        codigo: form.codigo.trim().toUpperCase(),
+        tarifaHora: Number(form.tarifaHora),
+        moneda: form.moneda.trim().toUpperCase(),
+        horaApertura: form.horaApertura,
+        horaCierre: form.horaCierre,
+      };
       if (editing) {
         await tenantsApi.update(editing, payload);
         setMsg(`Empresa "${payload.nombre}" actualizada`);
@@ -45,7 +61,16 @@ export default function TenantsPage() {
 
   const handleEdit = (t) => {
     setEditing(t.id);
-    setForm({ nombre: t.nombre, codigo: t.codigo });
+    setForm({
+      nombre: t.nombre,
+      codigo: t.codigo,
+      // Las empresas creadas antes de que existiera la configuración vienen
+      // con los valores por defecto que rellena el backend.
+      tarifaHora: t.tarifaHora ?? '1.00',
+      moneda: t.moneda ?? 'USD',
+      horaApertura: t.horaApertura ?? '00:00',
+      horaCierre: t.horaCierre ?? '23:59',
+    });
   };
 
   const handleDeactivate = async (t) => {
@@ -94,6 +119,47 @@ export default function TenantsPage() {
               required
             />
           </label>
+          <label>
+            Tarifa por hora *
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="9999.99"
+              value={form.tarifaHora}
+              onChange={(e) => setForm({ ...form, tarifaHora: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            Moneda *
+            <input
+              value={form.moneda}
+              onChange={(e) => setForm({ ...form, moneda: e.target.value.toUpperCase() })}
+              maxLength={3}
+              pattern="[A-Z]{3}"
+              placeholder="USD"
+              required
+            />
+          </label>
+          <label>
+            Abre a las *
+            <input
+              type="time"
+              value={form.horaApertura}
+              onChange={(e) => setForm({ ...form, horaApertura: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            Cierra a las *
+            <input
+              type="time"
+              value={form.horaCierre}
+              onChange={(e) => setForm({ ...form, horaCierre: e.target.value })}
+              required
+            />
+          </label>
           <button className="btn btn-primary" disabled={loading}>
             {loading ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear empresa'}
           </button>
@@ -120,6 +186,8 @@ export default function TenantsPage() {
               <tr>
                 <th>Código</th>
                 <th>Nombre</th>
+                <th>Tarifa/hora</th>
+                <th>Horario</th>
                 <th>Activa</th>
                 <th>Creada</th>
                 <th>Acciones</th>
@@ -130,6 +198,12 @@ export default function TenantsPage() {
                 <tr key={t.id}>
                   <td className="mono">{t.codigo}</td>
                   <td>{t.nombre}</td>
+                  <td className="mono">
+                    {t.tarifaHora != null ? `${Number(t.tarifaHora).toFixed(2)} ${t.moneda ?? ''}` : '—'}
+                  </td>
+                  <td className="mono">
+                    {t.horaApertura && t.horaCierre ? `${t.horaApertura} – ${t.horaCierre}` : '—'}
+                  </td>
                   <td>{t.activo ? 'Sí' : 'No'}</td>
                   <td>{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : '—'}</td>
                   <td className="actions">
@@ -146,7 +220,7 @@ export default function TenantsPage() {
               ))}
               {tenants.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted center">
+                  <td colSpan={7} className="muted center">
                     No hay empresas registradas
                   </td>
                 </tr>

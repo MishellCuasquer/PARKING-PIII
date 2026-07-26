@@ -3,6 +3,7 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import RecuperarPasswordPage from './pages/RecuperarPasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import ZonasPage from './pages/ZonasPage';
 import EspaciosPage from './pages/EspaciosPage';
@@ -14,11 +15,15 @@ import AuditoriaPage from './pages/AuditoriaPage';
 import TenantsPage from './pages/TenantsPage';
 import MisEmpresasPage from './pages/MisEmpresasPage';
 
+// Páginas de operación del parqueadero: el SUPER_ADMIN (dueño del SaaS) queda fuera.
+const OPERACION = ['ADMIN', 'OPERATOR', 'CLIENT'];
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/recuperar-password" element={<RecuperarPasswordPage />} />
 
       <Route
         path="/"
@@ -29,10 +34,38 @@ export default function App() {
         }
       >
         <Route index element={<DashboardPage />} />
-        <Route path="mis-empresas" element={<MisEmpresasPage />} />
-        <Route path="espacios" element={<EspaciosPage />} />
-        <Route path="vehiculos" element={<VehiculosPage />} />
-        <Route path="tickets" element={<TicketsPage />} />
+        <Route
+          path="mis-empresas"
+          element={
+            <ProtectedRoute roles={OPERACION}>
+              <MisEmpresasPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="espacios"
+          element={
+            <ProtectedRoute roles={OPERACION}>
+              <EspaciosPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="vehiculos"
+          element={
+            <ProtectedRoute roles={OPERACION}>
+              <VehiculosPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="tickets"
+          element={
+            <ProtectedRoute roles={OPERACION}>
+              <TicketsPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="zonas"
           element={

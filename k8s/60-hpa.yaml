@@ -1,0 +1,144 @@
+# Escalabilidad horizontal INDEPENDIENTE por microservicio (requisito 6.2).
+#
+# Cada HPA tiene su propio rango y su propio umbral porque los cuellos de
+# botella son distintos: tickets hace llamadas a otros tres servicios y es el
+# primero en saturarse; ms-audit escala por volumen de eventos en la cola.
+#
+# Requiere metrics-server en el clúster:
+#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#
+# NO hay HPA para zonas-espacios: sus emisores SSE viven en memoria del pod y
+# escalarlo partiría el stream (ver el comentario en 31-ms-zonas-espacios.yaml).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tickets
+  namespace: parqueadero
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tickets
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      # Ventana larga para no colapsar réplicas entre picos de entrada/salida
+      # de vehículos, que llegan a ráfagas (horas punta del parqueadero).
+      stabilizationWindowSeconds: 300
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vehiculos
+  namespace: parqueadero
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vehiculos
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: usuarios
+  namespace: parqueadero
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: usuarios
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Umbral más bajo: el hash de contraseñas (BCrypt) del login es
+          # deliberadamente caro en CPU y la latencia se dispara antes que en
+          # el resto de servicios.
+          averageUtilization: 60
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ms-audit
+  namespace: parqueadero
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ms-audit
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kong
+  namespace: parqueadero
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kong
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend
+  namespace: parqueadero
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80

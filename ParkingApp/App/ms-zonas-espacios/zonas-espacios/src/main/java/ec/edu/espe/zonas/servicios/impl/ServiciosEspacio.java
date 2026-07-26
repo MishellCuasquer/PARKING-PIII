@@ -136,10 +136,47 @@ public class ServiciosEspacio implements EspacioServicio {
      */
     @Override
     @Transactional
-    public EspacioResponseDto actualizarEspacio(EspacioRequestDto requestDto) {
-        // Nota: Se asume que el requestDto contiene el ID del espacio a actualizar
-        // Para esto se puede extender el EspacioRequestDto con un campo id
-        throw new RuntimeException("Este método requiere que EspacioRequestDto incluya el id del espacio a actualizar");
+    public EspacioResponseDto actualizarEspacio(UUID id, EspacioRequestDto requestDto) {
+        // El id viene de la ruta (PUT /api/espacios/{id}), no del cuerpo: el
+        // controlador ya lo tenía y antes se descartaba, por eso este método
+        // lanzaba siempre y el endpoint devolvía 500.
+        Espacio espacio = espacioRepositorio.findById(id)
+                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
+
+        // Aislamiento multitenant: no se puede tocar un espacio de otra empresa.
+        UUID tenantId = TenantContext.currentTenantId();
+        if (tenantId != null && !tenantId.equals(espacio.getIdTenant())) {
+            throw new RuntimeException("Espacio no encontrado con id: " + id);
+        }
+
+        // Cambiar el tipo de un espacio OCUPADO dejaría dentro un vehículo que
+        // ya no corresponde a la plaza, así que solo se permite si está libre.
+        boolean cambiaTipo = requestDto.getTipo() != null
+                && !requestDto.getTipo().equals(espacio.getTipo());
+        if (cambiaTipo && espacio.getEstado() == EstadoEspacio.OCUPADO) {
+            throw new RuntimeException(
+                    "No se puede cambiar el tipo de un espacio ocupado. Registre primero la salida del vehículo.");
+        }
+
+        if (requestDto.getTipo() != null) {
+            espacio.setTipo(requestDto.getTipo());
+        }
+        if (requestDto.getDescripcion() != null) {
+            espacio.setDescripcion(requestDto.getDescripcion());
+        }
+        espacio.setFechaActualizacion(LocalDateTime.now());
+
+        Espacio actualizado = espacioRepositorio.save(espacio);
+
+        auditPublisher.publish("UPDATE", ENTIDAD_ESPACIO, Map.of(
+                "id", actualizado.getId(),
+                "nombre", actualizado.getNombre(),
+                "tipo", actualizado.getTipo().name()
+        ));
+
+        EspacioResponseDto dto = mapearEspacioADto(actualizado);
+        emitirEventoSse("UPDATE", dto, actualizado.getIdTenant());
+        return dto;
     }
 
     /**
@@ -281,6 +318,10 @@ public class ServiciosEspacio implements EspacioServicio {
         dto.setNombre(espacio.getNombre());
         dto.setDescripcion(espacio.getDescripcion());
         dto.setTipo(espacio.getZona() != null ? espacio.getZona().getTipo() : null);
+        // Tipo propio del espacio (AUTO/MOTO/...), distinto de la categoria de
+        // la zona de arriba. Es lo que usa ms-tickets para no meter un auto en
+        // un espacio de moto.
+        dto.setTipoEspacio(espacio.getTipo());
         dto.setEstado(espacio.getEstado() != null ? espacio.getEstado().name() : null);
         dto.setNombreZona(espacio.getZona() != null ? espacio.getZona().getNombre() : null);
         dto.setFechaCreacion(espacio.getFechaCreacion());

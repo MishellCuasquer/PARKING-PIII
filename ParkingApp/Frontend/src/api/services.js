@@ -10,6 +10,16 @@ export const authApi = {
   // Cambia el contexto a otra empresa del mismo dueño: devuelve token nuevo
   cambiarEmpresa: (tenantId) =>
     api('/api/auth/cambiar-empresa', { method: 'POST', body: { tenantId } }),
+  // Recuperación de contraseña: ambos endpoints son públicos, los usa quien
+  // precisamente no puede autenticarse.
+  recuperarPassword: (email) =>
+    api('/api/auth/recuperar-password', { method: 'POST', body: { email }, auth: false }),
+  restablecerPassword: (token, nuevaPassword) =>
+    api('/api/auth/restablecer-password', {
+      method: 'POST',
+      body: { token, nuevaPassword },
+      auth: false,
+    }),
 };
 
 export const usersApi = {
@@ -17,6 +27,9 @@ export const usersApi = {
   create: (data) => api('/api/users', { method: 'POST', body: data }),
   // Registro público: mismo endpoint pero sin token (el backend decide si lo permite)
   register: (data) => api('/api/users', { method: 'POST', body: data, auth: false }),
+  // Corrige los datos de una persona ya registrada (una errata en el apellido,
+  // un teléfono nuevo...). La cédula no se envía: identifica a la persona.
+  update: (userId, data) => api(`/api/users/${userId}`, { method: 'PUT', body: data }),
   assignRole: (userId, roleId) =>
     api(`/api/users/${userId}/roles/${roleId}`, { method: 'POST' }),
   remove: (userId) => api(`/api/users/${userId}`, { method: 'DELETE' }),
@@ -30,6 +43,8 @@ export const rolesApi = {
 export const personasApi = {
   list: () => api('/api/personas'),
   byDni: (dni) => api(`/api/personas/${dni}`),
+  // Comprueba la cédula en todas las empresas para autocompletar el formulario
+  comprobarDni: (dni) => api(`/api/personas/comprobar/${dni}`),
 };
 
 // ---- tenants / empresas (ms-usuarios-roles-auth via Kong /api/tenants) ----
@@ -66,6 +81,8 @@ export const espaciosApi = {
 export const vehiculosApi = {
   list: () => api('/gw/vehiculos'),
   byPlaca: (placa) => api(`/gw/vehiculos/placa/${placa}`),
+  // Consulta la placa en todas las empresas para autocompletar el formulario
+  consultaPlaca: (placa) => api(`/gw/vehiculos/consulta-placa/${placa}`),
   create: (data) => api('/gw/vehiculos', { method: 'POST', body: data }),
   update: (id, data) => api(`/gw/vehiculos/${id}`, { method: 'PATCH', body: data }),
   remove: (id) => api(`/gw/vehiculos/${id}`, { method: 'DELETE' }),

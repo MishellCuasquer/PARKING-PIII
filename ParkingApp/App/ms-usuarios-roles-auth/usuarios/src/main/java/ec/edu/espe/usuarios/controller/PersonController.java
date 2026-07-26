@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -52,6 +53,30 @@ public class PersonController {
                 .build();
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Comprobar cédula antes de registrar: busca la persona en cualquier empresa
+     * para autocompletar el formulario y que sus datos no queden distintos en cada
+     * parqueadero. Devuelve solo los datos personales: nunca el id ni la empresa.
+     */
+    @GetMapping("/comprobar/{dni}")
+    public ResponseEntity<Map<String, Object>> comprobarDni(@PathVariable String dni) {
+        List<Person> personas = personRepository.findAllByDni(dni);
+        if (personas.isEmpty()) {
+            return ResponseEntity.ok(Map.of("encontrado", false));
+        }
+        Person person = personas.get(0);
+        Map<String, Object> datos = new LinkedHashMap<>();
+        datos.put("dni", person.getDni());
+        datos.put("firstName", person.getFirstName());
+        datos.put("middleName", person.getMiddleName());
+        datos.put("lastName", person.getLastName());
+        datos.put("email", person.getEmail());
+        datos.put("phone", person.getPhone());
+        datos.put("address", person.getAddress());
+        datos.put("nationality", person.getNationality());
+        return ResponseEntity.ok(Map.of("encontrado", true, "datos", datos));
     }
 
     // Crear una nueva persona: queda asociada al tenant del caller.

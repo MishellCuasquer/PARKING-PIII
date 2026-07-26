@@ -11,9 +11,12 @@ import { HttpClientService } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 import { AuditEvent, EventPublisher } from '../common/event-publisher.service';
 import { CacheService } from '../common/cache.service';
+import { TenantConfigService } from '../common/tenant-config.service';
 
 interface Vehiculo {
   placa: string;
+  // 'auto' | 'moto' | 'camioneta' (lo devuelve ms-vehiculos en ResponseVehiculoDto)
+  tipo?: string;
   [key: string]: unknown;
 }
 
@@ -22,7 +25,25 @@ interface EspacioApiResponse {
   nombre: string;
   estado: string;
   nombreZona?: string;
+  // Tipo de vehículo para el que sirve el espacio: AUTO, MOTO, BUSETA, BUS, CAMION
+  tipoEspacio?: string;
 }
+
+/**
+ * Espacios en los que puede aparcar cada tipo de vehículo.
+ *
+ * Un auto no cabe en un espacio de moto: esa es la razón de ser de esta tabla.
+ * Al revés tampoco se permite, porque ocupar una plaza de auto con una moto
+ * desperdicia sitio y descuadra el aforo de la zona.
+ *
+ * La camioneta admite dos destinos: entra en una plaza de auto normal y también
+ * en una de camión, que es lo que se hace en la práctica.
+ */
+const ESPACIOS_COMPATIBLES: Record<string, string[]> = {
+  auto: ['AUTO'],
+  moto: ['MOTO'],
+  camioneta: ['AUTO', 'CAMION'],
+};
 
 @Injectable()
 export class TicketsService {
@@ -30,7 +51,6 @@ export class TicketsService {
   private readonly personaUrl: string;
   private readonly espacioUrl: string;
   private readonly vehiculosUrl: string;
-  private readonly tarifaPorHora: number;
 
   constructor(
     @InjectRepository(Ticket)
@@ -40,13 +60,13 @@ export class TicketsService {
     private readonly serviceTokenService: ServiceTokenService,
     private readonly eventPublisher: EventPublisher,
     private readonly cacheService: CacheService,
+    private readonly tenantConfigService: TenantConfigService,
   ) {
     this.personaUrl = this.configService.get<string>('MS_PERSONA', '');
     this.espacioUrl =
       this.configService.get<string>('MS_ESPACIOS', '') ||
       this.configService.get<string>('MS_ZONAS', '').replace('/zonas', '/espacios');
     this.vehiculosUrl = this.configService.get<string>('MS_VEHICULOS', '');
-    this.tarifaPorHora = Number(this.configService.get<string>('TARIFA_HORA', '1.0'));
   }
 
   // tenantId null (datos legacy) se traduce a IS NULL en el where
@@ -93,10 +113,16 @@ export class TicketsService {
       );
     }
 
-    const ticketActivo = await this.validarTicketActivo(createTicketDto.placa, tenantId);
+    this.validarCompatibilidad(vehiculo, espacio);
+
+    const ticketActivo = await this.validarTicketActivo(createTicketDto.placa);
     if (ticketActivo) {
+      const mismaEmpresa = (ticketActivo.tenantId ?? null) === (tenantId ?? null);
       throw new BadRequestException(
-        `El vehículo con placa ${createTicketDto.placa} ya tiene un ticket activo`,
+        mismaEmpresa
+          ? `El vehículo con placa ${createTicketDto.placa} ya tiene un ticket activo`
+          : `El vehículo con placa ${createTicketDto.placa} está dentro de otro parqueadero. ` +
+            'Debe registrarse su salida antes de poder ingresar aquí.',
       );
     }
 
@@ -177,7 +203,10 @@ export class TicketsService {
     }
 
     const horas = this.calcularHorasCobro(ticket.fechhaHoraIngreso, fechaSalida);
-    const costo = this.calcularCosto(horas);
+    // La tarifa es la de la empresa dueña del TICKET, no la del usuario que
+    // cobra: si un operador cierra un ticket emitido bajo otra configuración,
+    // el precio sigue siendo el que corresponde a ese parqueadero.
+    const costo = await this.calcularCosto(horas, ticket.tenantId ?? null);
 
     ticket.activo = false;
     ticket.fechhaHoraSalida = fechaSalida;
@@ -218,6 +247,34 @@ export class TicketsService {
       this.logger.error(`Error al validar persona ${dni}: ${error}`);
       return null;
     }
+  }
+
+  /**
+   * Impide emitir un ticket de un auto en un espacio de moto (y viceversa).
+   *
+   * Es permisiva a propósito cuando falta información: si el vehículo no
+   * declara tipo o el espacio no declara `tipoEspacio` —datos anteriores a
+   * que se expusiera este campo— deja pasar. Bloquear por un dato ausente
+   * dejaría sin poder entrar a vehículos ya registrados.
+   */
+  private validarCompatibilidad(vehiculo: Vehiculo, espacio: Espacio): void {
+    const tipoVehiculo = vehiculo.tipo?.toLowerCase();
+    const tipoEspacio = espacio.tipoEspacio?.toUpperCase();
+
+    if (!tipoVehiculo || !tipoEspacio) {
+      return;
+    }
+
+    const compatibles = ESPACIOS_COMPATIBLES[tipoVehiculo];
+    if (!compatibles || compatibles.includes(tipoEspacio)) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `El espacio ${espacio.codigo} es para vehículos de tipo ${tipoEspacio} ` +
+        `y el vehículo ${vehiculo.placa} es ${tipoVehiculo.toUpperCase()}. ` +
+        'Seleccione un espacio compatible.',
+    );
   }
 
   private async validarPlaca(placa: string, tenantId: string | null): Promise<Vehiculo | null> {
@@ -266,6 +323,7 @@ export class TicketsService {
         codigo: espacio.nombre,
         zona: espacio.nombreZona ?? '',
         nombreZona: espacio.nombreZona,
+        tipoEspacio: espacio.tipoEspacio,
         disponible: true,
       };
     } catch (error) {
@@ -274,10 +332,13 @@ export class TicketsService {
     }
   }
 
-  private async validarTicketActivo(placa: string, tenantId: string | null): Promise<Ticket | null> {
-    return this.ticketRepository.findOne({
-      where: { placa, activo: true, tenantId: this.tenantWhere(tenantId) },
-    });
+  /**
+   * Un mismo carro no puede estar dentro de dos parqueaderos a la vez: el ticket
+   * activo se busca en TODAS las empresas, no solo en la del solicitante. Hasta
+   * que no se cierre (registre la salida) no puede ingresar a otro parqueadero.
+   */
+  private async validarTicketActivo(placa: string): Promise<Ticket | null> {
+    return this.ticketRepository.findOne({ where: { placa, activo: true } });
   }
 
   private toDate(fecha: Date | string): Date {
@@ -285,9 +346,14 @@ export class TicketsService {
   }
 
   /**
-   * Calcula las horas a cobrar según el tiempo de permanencia.
-   * Se redondea hacia arriba (cada fracción de hora cuenta como hora completa)
-   * y se aplica un mínimo de 1 hora.
+   * Horas a cobrar según el tiempo de permanencia.
+   *
+   * La fracción se cobra de forma PROPORCIONAL, no como hora completa: quien
+   * se queda hora y media paga hora y media, no dos horas. Lo único que se
+   * redondea es el importe final, a céntimos (ver calcularCosto).
+   *
+   * Se mantiene un mínimo de 1 hora: una estancia de 10 minutos paga la hora,
+   * que es la tarifa mínima habitual de un parqueadero.
    */
   private calcularHorasCobro(ingreso: Date | string, salida: Date | string): number {
     const ingresoDate = this.toDate(ingreso);
@@ -299,11 +365,20 @@ export class TicketsService {
     }
 
     const horasTranscurridas = diffMs / (1000 * 60 * 60);
-    return Math.max(1, Math.ceil(horasTranscurridas));
+    return Math.max(1, horasTranscurridas);
   }
 
-  private calcularCosto(horas: number): number {
-    return Number((horas * this.tarifaPorHora).toFixed(2));
+  /**
+   * Coste del ticket según la tarifa POR EMPRESA (modelo SaaS multitenant).
+   * TARIFA_HORA del entorno pasa a ser solo el respaldo: se usa cuando el
+   * ticket no tiene tenant o cuando ms-usuarios no está disponible.
+   *
+   * Aquí es donde se redondea, y solo aquí: a 2 decimales, porque el importe
+   * se cobra en dólares y no existen fracciones de céntimo.
+   */
+  private async calcularCosto(horas: number, tenantId: string | null): Promise<number> {
+    const tarifa = await this.tenantConfigService.getTarifaHora(tenantId);
+    return Number((horas * tarifa).toFixed(2));
   }
 
   private async emitirTicket(

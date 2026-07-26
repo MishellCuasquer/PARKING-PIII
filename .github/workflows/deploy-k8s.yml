@@ -1,0 +1,155 @@
+name: Deploy to Kubernetes
+
+# Despliegue SEMIAUTOMATIZADO (requisito 7.2 del enunciado):
+#   - Automático tras un push a main que toque los manifiestos de k8s/.
+#   - Manual desde la pestaña Actions ("Run workflow") para redesplegar una
+#     versión concreta sin tocar código.
+#
+# Es deliberadamente semiautomático: un despliegue a producción disparado por
+# cualquier commit a main dejaría la plataforma a merced de un cambio de estilo.
+#
+# Requiere dos secretos en el repositorio:
+#   KUBE_CONFIG  -> kubeconfig del clúster, en base64
+#                   (cat ~/.kube/config | base64 -w0)
+#   Opcionales: TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID para la notificación.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "k8s/**"
+      - ".github/workflows/deploy-k8s.yml"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag de las imágenes a desplegar (por defecto: latest)"
+        required: false
+        default: "latest"
+
+concurrency:
+  # Nunca dos despliegues a la vez sobre el mismo clúster.
+  group: deploy-k8s
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar que el clúster está configurado
+        id: preflight
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          if [ -z "$KUBE_CONFIG" ]; then
+            echo "::warning::Falta el secreto KUBE_CONFIG; se validan los manifiestos pero no se despliega."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validar los manifiestos contra el esquema de Kubernetes
+        # Se ejecuta SIEMPRE, haya clúster o no: un YAML inválido debe fallar
+        # aquí y no a mitad de un `kubectl apply` con medio despliegue hecho.
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar xz kubeconform
+          ./kubeconform -strict -summary -kubernetes-version 1.29.0 k8s/
+
+      - name: Configurar kubectl
+        if: steps.preflight.outputs.configured == 'true'
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl cluster-info
+
+      - name: Aplicar manifiestos
+        if: steps.preflight.outputs.configured == 'true'
+        run: |
+          # El namespace primero: el resto de recursos lo necesitan existiendo.
+          kubectl apply -f k8s/00-namespace.yaml
+          kubectl apply -f k8s/
+
+      - name: Fijar el tag de imagen solicitado
+        if: steps.preflight.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.image_tag }}
+          PREFIX: ghcr.io/mishellcuasquer/parking-piii
+        run: |
+          # Con `latest` los manifiestos ya apuntan al tag correcto; solo hay
+          # que reescribir la imagen cuando se pide una versión concreta.
+          if [ "$TAG" != "latest" ]; then
+            for d in usuarios zonas-espacios vehiculos tickets ms-audit frontend monitoreo kong; do
+              case "$d" in
+                usuarios)        img=ms-usuarios ;;
+                zonas-espacios)  img=ms-zonas-espacios ;;
+                vehiculos)       img=ms-vehiculos ;;
+                tickets)         img=ms-tickets ;;
+                *)               img=$d ;;
+              esac
+              kubectl -n parqueadero set image "deployment/$d" "$d=$PREFIX/$img:$TAG"
+            done
+          fi
+
+      - name: Esperar a que el despliegue termine
+        if: steps.preflight.outputs.configured == 'true'
+        run: |
+          # La infraestructura con estado primero: si Postgres o RabbitMQ no
+          # levantan, los microservicios entran en CrashLoop y el rollout
+          # timeoutea por una causa que no es la suya.
+          for s in postgres mysql-zonas redis rabbitmq; do
+            kubectl -n parqueadero rollout status "statefulset/$s" --timeout=5m
+          done
+          for d in kong usuarios zonas-espacios vehiculos tickets ms-audit frontend monitoreo; do
+            kubectl -n parqueadero rollout status "deployment/$d" --timeout=5m
+          done
+
+      - name: Estado final del clúster
+        if: steps.preflight.outputs.configured == 'true'
+        run: |
+          kubectl -n parqueadero get pods -o wide
+          kubectl -n parqueadero get svc,ingress,hpa
+
+      - name: Notificar el despliegue a Telegram
+        # Evento de despliegue exigido por el requisito 7.4.
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DEPLOYED: ${{ steps.preflight.outputs.configured }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Secretos de Telegram no configurados; se omite la notificación."
+            exit 0
+          fi
+
+          if [ "${{ job.status }}" = "success" ]; then
+            if [ "$DEPLOYED" = "true" ]; then
+              ESTADO="✅ DESPLIEGUE EXITOSO"
+            else
+              ESTADO="⚠️ SOLO VALIDACIÓN (falta KUBE_CONFIG)"
+            fi
+          else
+            ESTADO="❌ DESPLIEGUE FALLIDO"
+          fi
+
+          MENSAJE=$(printf '%s\n' \
+            "☸️ Kubernetes — $ESTADO" \
+            "" \
+            "📦 Repositorio: ${{ github.repository }}" \
+            "🌿 Rama: ${{ github.ref_name }}" \
+            "🏷️ Imagen: ${{ inputs.image_tag || 'latest' }}" \
+            "👤 Usuario: ${{ github.actor }}" \
+            "📝 Commit: ${{ github.sha }}" \
+            "🌐 https://parqueadero.espe.edu.ec" \
+            "" \
+            "🔗 Ver ejecución:" \
+            "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode text="$MENSAJE"

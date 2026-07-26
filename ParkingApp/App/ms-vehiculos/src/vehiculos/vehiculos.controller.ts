@@ -75,6 +75,16 @@ export class VehiculosController {
     return this.vehiculosService.findByPlaca(placa, this.resolveTenantId(req));
   }
 
+  /**
+   * Autocompletado del formulario: busca la placa en todas las empresas y
+   * devuelve solo las características del vehículo (sin id, tenant ni dueño).
+   */
+  @Get('consulta-placa/:placa')
+  @Roles('ADMIN', 'OPERATOR', 'CLIENT')
+  consultarPlaca(@Param('placa') placa: string) {
+    return this.vehiculosService.consultarPlacaGlobal(placa);
+  }
+
   @Get(':id')
   @Roles('ADMIN', 'OPERATOR')
   findOne(@Param('id') id: string, @Request() req) {

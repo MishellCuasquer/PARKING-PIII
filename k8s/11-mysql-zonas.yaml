@@ -1,0 +1,89 @@
+# MySQL dedicado a ms-zonas-espacios (el microservicio Java de zonas y espacios
+# usa MySQL, no Postgres: por eso tiene su propio motor y su propio PVC).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-zonas
+  namespace: parqueadero
+  labels:
+    app: mysql-zonas
+spec:
+  type: ClusterIP
+  selector:
+    app: mysql-zonas
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-zonas
+  namespace: parqueadero
+  labels:
+    app: mysql-zonas
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  serviceName: mysql-zonas
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-zonas
+  template:
+    metadata:
+      labels:
+        app: mysql-zonas
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: mysql
+          image: mysql:8
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mysql
+              containerPort: 3306
+          env:
+            - name: MYSQL_DATABASE
+              value: zonas_espacios
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: parqueadero-secrets
+                  key: MYSQL_ROOT_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

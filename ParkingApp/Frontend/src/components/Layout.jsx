@@ -1,12 +1,16 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+// El SUPER_ADMIN es el dueño del SaaS: administra empresas, usuarios y auditoría,
+// pero no opera el parqueadero de sus clientes (espacios, vehículos, tickets, zonas).
+const OPERACION = ['ADMIN', 'OPERATOR', 'CLIENT'];
+
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '📊', end: true },
-  { to: '/mis-empresas', label: 'Mis empresas', icon: '🏢' },
-  { to: '/espacios', label: 'Espacios', icon: '🅿️' },
-  { to: '/vehiculos', label: 'Vehículos', icon: '🚗' },
-  { to: '/tickets', label: 'Tickets', icon: '🎫' },
+  { to: '/mis-empresas', label: 'Mis empresas', icon: '🏢', roles: OPERACION },
+  { to: '/espacios', label: 'Espacios', icon: '🅿️', roles: OPERACION },
+  { to: '/vehiculos', label: 'Vehículos', icon: '🚗', roles: OPERACION },
+  { to: '/tickets', label: 'Tickets', icon: '🎫', roles: OPERACION },
   { to: '/zonas', label: 'Zonas', icon: '🗺️', roles: ['ADMIN', 'OPERATOR'] },
   { to: '/tenants', label: 'Empresas', icon: '🏢', roles: ['SUPER_ADMIN'] },
   { to: '/usuarios', label: 'Usuarios', icon: '👥', roles: ['ADMIN', 'SUPER_ADMIN'] },

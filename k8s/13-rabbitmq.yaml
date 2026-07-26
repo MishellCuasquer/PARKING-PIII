@@ -1,0 +1,110 @@
+# RabbitMQ: broker de eventos de dominio.
+# Publican usuarios, zonas-espacios, vehiculos y tickets sobre el exchange
+# `exchange_audit`; ms-audit consume `queue_audit` y persiste la trazabilidad.
+#
+# Se usa la imagen propia del repo (ParkingApp/docker/rabbitmq/Dockerfile), que
+# añade el plugin de métricas Prometheus y el rabbitmq.conf del proyecto.
+# La topología (exchange, cola, dead-letter) la declara cada microservicio al
+# arrancar, así que el broker puede partir vacío sin perder eventos.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: parqueadero
+  labels:
+    app: rabbitmq
+spec:
+  type: ClusterIP
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: parqueadero
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  serviceName: rabbitmq
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: rabbitmq
+          image: ghcr.io/mishellcuasquer/parking-piii/rabbitmq:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: parqueadero-secrets
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: parqueadero-secrets
+                  key: RABBITMQ_PASSWORD
+            # RabbitMQ guarda su base bajo rabbit@<hostname>. En un StatefulSet
+            # el hostname es estable (rabbitmq-0), por eso no hace falta el
+            # truco del `hostname:` fijo que sí necesita docker-compose.
+            - name: RABBITMQ_NODENAME
+              value: rabbit@localhost
+            - name: RABBITMQ_USE_LONGNAME
+              value: "false"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

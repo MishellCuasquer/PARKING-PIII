@@ -77,6 +77,10 @@ export default function LoginPage() {
           </button>
 
           <p className="muted center">
+            <Link to="/recuperar-password">¿Olvidaste tu contraseña?</Link>
+          </p>
+
+          <p className="muted center">
             ¿No tienes cuenta? <Link to="/register">Regístrate</Link>
           </p>
         </form>
