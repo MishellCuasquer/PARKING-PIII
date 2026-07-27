@@ -25,6 +25,12 @@ spring:
 
 server:
   port: 8081
+  error:
+    # Por defecto Spring Boot oculta el "message" del error en el JSON de
+    # respuesta; los mensajes que lanza este servicio ya están pensados para
+    # el usuario final, así que ocultarlos solo confunde sin ganar seguridad.
+    include-message: always
+    include-binding-errors: always
 
 jwt:
   secret: ${JWT_SECRET:miClaveSecretaSuperSeguraParaJWT123456789}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { personasApi, rolesApi, usersApi } from '../api/services';
+import { personasApi, rolesApi, tenantsApi, usersApi } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import { ErrorMsg, SuccessMsg } from '../components/Feedback';
 import { PATRON_NOMBRE, TITULO_NACIONALIDAD, TITULO_NOMBRE } from '../validaciones';
@@ -25,6 +25,12 @@ export default function UsuariosPage() {
   const [filtroEmpresa, setFiltroEmpresa] = useState('TODAS');
   const [roles, setRoles] = useState([]);
   const [form, setForm] = useState(EMPTY);
+  // Empresa del NUEVO usuario que se está creando. Va aparte de `form` (y no en
+  // EMPTY) a propósito: EMPTY también lo usa "Comprobar cédula" para rellenar
+  // datos de la persona, y la empresa no es un dato de la persona sino de la
+  // cuenta que se está creando en ese momento.
+  const [tenantId, setTenantId] = useState('');
+  const [tenants, setTenants] = useState([]);
   const [error, setError] = useState(null);
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -40,6 +46,15 @@ export default function UsuariosPage() {
 
   useEffect(() => {
     load();
+    // El superadmin no tiene empresa propia: el backend no puede asignarla sola
+    // (rechaza la creación), así que aquí sí hay que elegirla a mano.
+    if (esSuperAdmin) {
+      tenantsApi
+        .publicList()
+        .then((t) => setTenants(t || []))
+        .catch(() => setTenants([]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
@@ -100,9 +115,17 @@ export default function UsuariosPage() {
         setMsg(`Datos de "${res.username}" actualizados`);
         cancelarEdicion();
       } else {
+        // El superadmin no tiene empresa propia: sin esto el backend rechaza
+        // la creación con un 400 sin decir por qué (ver UserServiceImpl.
+        // resolveTenantForNewUser). Un ADMIN normal no manda tenantId: el
+        // backend le asigna su propia empresa automáticamente.
+        if (esSuperAdmin) {
+          payload.tenantId = tenantId;
+        }
         const res = await usersApi.create(payload);
         setMsg(`Usuario creado: "${res.username}" (contraseña inicial = cédula, rol CLIENT)`);
         setForm(EMPTY);
+        setTenantId('');
         setBloqueado(false);
       }
       load();
@@ -194,6 +217,21 @@ export default function UsuariosPage() {
             : 'El username se genera automáticamente a partir de los nombres y la contraseña inicial es la cédula. El rol por defecto es CLIENT (puedes cambiarlo en la tabla).'}
         </p>
         <form className="form-grid" onSubmit={handleSubmit}>
+          {esSuperAdmin && !editando && (
+            <label>
+              Empresa *
+              <select value={tenantId} onChange={(e) => setTenantId(e.target.value)} required>
+                <option value="" disabled>
+                  Selecciona la empresa…
+                </option>
+                {tenants.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             Cédula (DNI) *
             <input

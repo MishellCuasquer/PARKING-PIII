@@ -10,6 +10,7 @@ import {
   Request,
   BadRequestException,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 import { VehiculosService } from './vehiculos.service';
 import { CreateVehiculoDto } from './dto/create-vehiculo.dto';
 import { UpdateVehiculoDto } from './dto/update-vehiculo.dto';
@@ -17,6 +18,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 
+// Sin @ApiBearerAuth() Swagger UI no adjunta el token al pulsar "Try it out":
+// el botón "Authorize" lo guarda, pero cada endpoint necesita declarar que
+// exige el esquema bearer para que la petición salga con el header puesto.
+@ApiBearerAuth()
 @Controller('vehiculos')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class VehiculosController {
