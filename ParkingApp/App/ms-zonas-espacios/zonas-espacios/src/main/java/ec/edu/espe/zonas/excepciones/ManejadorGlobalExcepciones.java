@@ -1,9 +1,12 @@
 package ec.edu.espe.zonas.excepciones;
 
+import com.fasterxml.jackson.databind.JsonMappingException.Reference;
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -13,6 +16,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -64,6 +68,32 @@ public class ManejadorGlobalExcepciones {
                     .collect(Collectors.joining(", "));
         }
         return respuesta(HttpStatus.BAD_REQUEST, mensaje);
+    }
+
+    /**
+     * Cuerpo JSON ilegible: normalmente un valor que no existe en un enum
+     * (`"tipo": "REGULAR"` cuando solo hay GENERAL/PREFERENCIAL/VIP/VISITANTES).
+     * Es un error del cliente, así que 400 y no el 500 que salía antes; y el
+     * mensaje enumera los valores admitidos para no obligar a mirar el código.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> cuerpoIlegible(HttpMessageNotReadableException e) {
+        Throwable causa = e.getCause();
+        if (causa instanceof InvalidFormatException formato && formato.getTargetType() != null
+                && formato.getTargetType().isEnum()) {
+            String campo = formato.getPath().stream()
+                    .map(Reference::getFieldName)
+                    .filter(Objects::nonNull)
+                    .reduce((primero, ultimo) -> ultimo)
+                    .orElse("campo");
+            String admitidos = Arrays.stream(formato.getTargetType().getEnumConstants())
+                    .map(Object::toString)
+                    .collect(Collectors.joining(", "));
+            return respuesta(HttpStatus.BAD_REQUEST, String.format(
+                    "Valor inválido para '%s': %s. Valores admitidos: %s",
+                    campo, formato.getValue(), admitidos));
+        }
+        return respuesta(HttpStatus.BAD_REQUEST, "El cuerpo de la petición no se pudo leer");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

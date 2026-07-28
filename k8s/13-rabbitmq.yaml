@@ -78,17 +78,25 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
+          # OJO con timeoutSeconds: `rabbitmq-diagnostics ping` arranca una VM de
+          # Erlang para consultar al nodo y tarda varios segundos. Con el valor
+          # por defecto (1s) la sonda vence siempre, el kubelet mata el
+          # contenedor y RabbitMQ se queda en un bucle de reinicios sin llegar
+          # nunca a Ready.
           readinessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "-q", "ping"]
             initialDelaySeconds: 20
             periodSeconds: 10
+            timeoutSeconds: 10
             failureThreshold: 12
           livenessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "-q", "ping"]
-            initialDelaySeconds: 60
+            initialDelaySeconds: 90
             periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m
