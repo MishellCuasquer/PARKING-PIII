@@ -50,10 +50,21 @@ export default function LoginPage() {
 
           <label>
             Usuario o correo
+            {/*
+              El nombre de usuario distingue mayúsculas: "Cliente" no entra y
+              "cliente" sí. Los teclados móviles y algunos navegadores
+              autocapitalizan la primera letra de un campo de texto, y el error
+              que se ve es "contraseña incorrecta" aunque la contraseña esté
+              bien. autoCapitalize/autoCorrect lo evitan.
+            */}
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="admin o correo@dominio.com"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="username"
               autoFocus
               required
             />
@@ -66,6 +77,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              autoComplete="current-password"
               required
             />
           </label>

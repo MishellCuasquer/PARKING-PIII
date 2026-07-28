@@ -1,8 +1,42 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+/**
+ * Error de una llamada a otro microservicio que conserva el código HTTP y el
+ * mensaje del servicio remoto.
+ *
+ * Sin esto, un 409 de ms-zonas ("el espacio ya está ocupado") llegaba al
+ * usuario como un 400 genérico: el motivo real se perdía en el `Error` plano.
+ */
+export class UpstreamHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly detalle: string,
+    url: string,
+  ) {
+    super(`${url} respondió ${status}: ${detalle}`);
+    this.name = 'UpstreamHttpError';
+  }
+}
+
 @Injectable()
 export class HttpClientService {
   private readonly logger = new Logger(HttpClientService.name);
+
+  // El cuerpo de error puede ser JSON ({message}) o texto plano según el servicio
+  private async extraerDetalle(response: Response): Promise<string> {
+    try {
+      const texto = await response.text();
+      if (!texto) return response.statusText;
+      try {
+        const json = JSON.parse(texto);
+        return json.message ?? json.error ?? texto;
+      } catch {
+        return texto;
+      }
+    } catch {
+      return response.statusText;
+    }
+  }
 
   async get<T>(url: string, authHeader?: string, tenantId?: string | null): Promise<T> {
     const response = await fetch(url, {
@@ -10,7 +44,7 @@ export class HttpClientService {
     });
     if (!response.ok) {
       this.logger.error(`GET ${url} failed: ${response.status} ${response.statusText}`);
-      throw new Error(`Error fetching ${url}: ${response.statusText}`);
+      throw new UpstreamHttpError(response.status, await this.extraerDetalle(response), url);
     }
     return response.json() as Promise<T>;
   }
@@ -22,7 +56,7 @@ export class HttpClientService {
       body: JSON.stringify(body),
     });
     if (!response.ok) {
-      throw new Error(`POST ${url} failed: ${response.statusText}`);
+      throw new UpstreamHttpError(response.status, await this.extraerDetalle(response), url);
     }
     return response.json() as Promise<T>;
   }
@@ -34,7 +68,7 @@ export class HttpClientService {
     });
     if (!response.ok) {
       this.logger.error(`PUT ${url} failed: ${response.status} ${response.statusText}`);
-      throw new Error(`Error updating ${url}: ${response.statusText}`);
+      throw new UpstreamHttpError(response.status, await this.extraerDetalle(response), url);
     }
     return response.json() as Promise<T>;
   }

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { VehiculosController } from './vehiculos.controller';
 import { VehiculosService } from './vehiculos.service';
 
@@ -107,6 +107,34 @@ describe('VehiculosController', () => {
     expect(() => controller.findByPlaca('ABC-1234', req)).toThrow(
       BadRequestException,
     );
+  });
+
+  /**
+   * Escenario 4: el tenant sale del claim del JWT. Una cabecera que lo
+   * contradice se rechaza con 403 en vez de ignorarse en silencio, para que un
+   * intento de saltar de empresa no responda 200.
+   */
+  it('rechaza con 403 un X-Tenant-Id distinto al del token', () => {
+    const req = makeReq({ headers: { 'x-tenant-id': 'tenant-ajeno' } });
+
+    expect(() => controller.findAll(req)).toThrow(ForbiddenException);
+    expect(serviceMock.findAll).not.toHaveBeenCalled();
+  });
+
+  it('rechaza con 403 un ?tenant= distinto al del token', () => {
+    const req = makeReq({ query: { tenant: 'tenant-ajeno' } });
+
+    expect(() => controller.findAll(req)).toThrow(ForbiddenException);
+    expect(serviceMock.findAll).not.toHaveBeenCalled();
+  });
+
+  it('admite la cabecera cuando coincide con el tenant del token', async () => {
+    serviceMock.findAll.mockResolvedValue([]);
+    const req = makeReq({ headers: { 'x-tenant-id': TENANT } });
+
+    await controller.findAll(req);
+
+    expect(serviceMock.findAll).toHaveBeenCalledWith(TENANT);
   });
 
   it('update pasa tenant, usuario e IP al servicio', async () => {

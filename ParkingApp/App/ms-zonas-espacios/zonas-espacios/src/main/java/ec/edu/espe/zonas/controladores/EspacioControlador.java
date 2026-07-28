@@ -42,10 +42,12 @@ public class EspacioControlador {
      */
     @GetMapping("/stream")
     public ResponseEntity<SseEmitter> stream() {
+        // El snapshot va dentro del primer evento: así el cliente queda en un
+        // estado consistente en cuanto conecta, también tras una reconexión.
         return ResponseEntity.ok()
                 .header("X-Accel-Buffering", "no")
                 .header("Cache-Control", "no-cache")
-                .body(espacioEventos.suscribir());
+                .body(espacioEventos.suscribir(espacioServicio.obtenerEspacios()));
     }
 
     /**

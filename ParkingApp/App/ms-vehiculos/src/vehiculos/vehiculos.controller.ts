@@ -9,6 +9,7 @@ import {
   UseGuards,
   Request,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { VehiculosService } from './vehiculos.service';
@@ -31,7 +32,12 @@ export class VehiculosController {
    * Tenant efectivo de la petición:
    * - Cuenta SERVICE (sin tenant propio): debe traer el header X-Tenant-Id
    *   con el tenant del usuario original (lo propaga ms-tickets).
-   * - Usuario normal: el claim tenantId del JWT (el header se ignora, no es falsificable).
+   * - Usuario normal: el claim tenantId del JWT.
+   *
+   * Si un usuario normal manda un tenant distinto al de su token (por cabecera
+   * o por query) la petición se rechaza con 403. Antes se descartaba en
+   * silencio: no había fuga de datos, pero un intento de saltar de empresa
+   * respondía 200 y quedaba indistinguible de una petición legítima.
    */
   private resolveTenantId(req): string | null {
     const roles: string[] = req.user?.roles ?? [];
@@ -44,7 +50,17 @@ export class VehiculosController {
       }
       return header;
     }
-    return req.user?.tenantId ?? null;
+
+    const tenantDelToken: string | null = req.user?.tenantId ?? null;
+    const solicitado =
+      (req.headers['x-tenant-id'] as string) || (req.query?.tenant as string) || null;
+
+    if (solicitado && solicitado !== tenantDelToken) {
+      throw new ForbiddenException(
+        'El tenant solicitado no coincide con el de la sesión',
+      );
+    }
+    return tenantDelToken;
   }
 
   private clientIp(req): string {

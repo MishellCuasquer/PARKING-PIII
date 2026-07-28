@@ -8,9 +8,10 @@ import { AuthModule } from '../auth/auth.module';
 import { EventPublisher } from '../common/event-publisher.service';
 import { CacheService } from '../common/cache.service';
 import { TenantConfigService } from '../common/tenant-config.service';
+import { OutboxEvent } from '../common/entities/outbox-event.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Ticket]), AuthModule],
+  imports: [TypeOrmModule.forFeature([Ticket, OutboxEvent]), AuthModule],
   controllers: [TicketsController],
   providers: [
     TicketsService,

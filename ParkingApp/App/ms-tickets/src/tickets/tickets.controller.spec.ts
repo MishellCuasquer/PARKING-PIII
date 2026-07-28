@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { TicketsController } from './tickets.controller';
@@ -152,5 +153,34 @@ describe('TicketsController', () => {
       'user1',
       '200.1.1.1',
     );
+  });
+
+  /**
+   * Escenario 4: el tenant sale del claim del JWT. Una cabecera o query que lo
+   * contradice se rechaza con 403 en vez de ignorarse en silencio.
+   */
+  it('rechaza con 403 un X-Tenant-Id distinto al del token', () => {
+    const espia = jest.spyOn(ticketsService, 'findAll');
+    const req = makeReq({ headers: { 'x-tenant-id': 'tenant-ajeno' } });
+
+    expect(() => controller.findAll(req)).toThrow(ForbiddenException);
+    expect(espia).not.toHaveBeenCalled();
+  });
+
+  it('rechaza con 403 un ?tenant= distinto al del token', () => {
+    const espia = jest.spyOn(ticketsService, 'findAll');
+    const req = makeReq({ query: { tenant: 'tenant-ajeno' } });
+
+    expect(() => controller.findAll(req)).toThrow(ForbiddenException);
+    expect(espia).not.toHaveBeenCalled();
+  });
+
+  it('admite la cabecera cuando coincide con el tenant del token', async () => {
+    jest.spyOn(ticketsService, 'findAll').mockResolvedValue([]);
+    const req = makeReq({ headers: { 'x-tenant-id': TENANT } });
+
+    await controller.findAll(req);
+
+    expect(ticketsService.findAll).toHaveBeenCalledWith(TENANT, 'user1');
   });
 });

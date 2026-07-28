@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { TicketsService } from './tickets.service';
 import { Ticket } from './entities/ticket.entity';
-import { HttpClientService } from '../common/htppl-cliente.service';
+import { HttpClientService, UpstreamHttpError } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 import { EventPublisher } from '../common/event-publisher.service';
 import { CacheService } from '../common/cache.service';
@@ -195,18 +195,34 @@ describe('TicketsService', () => {
       await expect(service.create(createDto, TENANT)).rejects.toThrow(BadRequestException);
     });
 
-    it('lanza BadRequestException si el espacio no está disponible', async () => {
+    /**
+     * Escenario 3/8: quien decide si la plaza está libre es ms-zonas, de forma
+     * atómica y bajo bloqueo. Un 409 suyo se propaga como 409 al operador, con
+     * el motivo real (ocupado, mantenimiento…) en el mensaje.
+     */
+    it('propaga como 409 el rechazo de ms-zonas al ocupar el espacio', async () => {
       httpClientMock.get.mockImplementation((url: string) => {
         if (url.includes('/personas/')) return Promise.resolve(persona);
         if (url.includes('/vehiculos')) return Promise.resolve(vehiculo);
-        if (url.includes('/espacios/')) return Promise.resolve({ ...espacioDisponible, estado: 'OCUPADO' });
+        if (url.includes('/espacios/')) return Promise.resolve(espacioDisponible);
         return Promise.resolve(null);
       });
+      repoMock.findOne.mockResolvedValue(null);
+      // Once: el rechazo es de este caso y no debe filtrarse a los demás tests
+      const rechazo = new UpstreamHttpError(
+        409,
+        'El espacio no está disponible (estado: mantenimiento)',
+        '/espacios',
+      );
+      httpClientMock.put.mockRejectedValueOnce(rechazo).mockRejectedValueOnce(rechazo);
 
-      await expect(service.create(createDto, TENANT)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(ConflictException);
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(/mantenimiento/);
+      // El ticket no llega a persistirse
+      expect(repoMock.save).not.toHaveBeenCalled();
     });
 
-    it('lanza BadRequestException si la placa ya tiene un ticket activo', async () => {
+    it('lanza ConflictException si la placa ya tiene un ticket activo', async () => {
       httpClientMock.get.mockImplementation((url: string) => {
         if (url.includes('/personas/')) return Promise.resolve(persona);
         if (url.includes('/vehiculos')) return Promise.resolve(vehiculo);
@@ -215,7 +231,28 @@ describe('TicketsService', () => {
       });
       repoMock.findOne.mockResolvedValue({ id: 'activo', activo: true, tenantId: TENANT });
 
-      await expect(service.create(createDto, TENANT)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(ConflictException);
+    });
+
+    /**
+     * Escenario 1: el rechazo por duplicado ocurre ANTES de ocupar el espacio.
+     * Si se comprobara después, la plaza quedaría ocupada por un ticket que no
+     * llegó a existir.
+     */
+    it('no ocupa el espacio cuando rechaza un ticket duplicado', async () => {
+      httpClientMock.get.mockImplementation((url: string) => {
+        if (url.includes('/personas/')) return Promise.resolve(persona);
+        if (url.includes('/vehiculos')) return Promise.resolve(vehiculo);
+        if (url.includes('/espacios/')) return Promise.resolve(espacioDisponible);
+        return Promise.resolve(null);
+      });
+      repoMock.findOne.mockResolvedValue({ id: 'activo', activo: true, tenantId: TENANT });
+
+      await expect(service.create(createDto, TENANT)).rejects.toThrow(ConflictException);
+
+      expect(httpClientMock.put).not.toHaveBeenCalled();
+      expect(repoMock.save).not.toHaveBeenCalled();
+      expect(publisherMock.publishEvent).not.toHaveBeenCalled();
     });
 
     it('rechaza el ingreso si el vehículo está dentro de otro parqueadero', async () => {
@@ -389,12 +426,20 @@ describe('TicketsService', () => {
       expect(tenantConfigMock.getTarifaHora).toHaveBeenCalledWith(null);
     });
 
-    it('lanza BadRequestException si el ticket ya está cerrado', async () => {
+    /**
+     * Escenario 2: el doble cierre se detecta antes de liberar el espacio y de
+     * publicar el evento, así que no hay doble liberación ni auditoría duplicada.
+     */
+    it('lanza ConflictException si el ticket ya está cerrado', async () => {
       repoMock.findOne.mockResolvedValue({ ...ticketActivo, activo: false });
 
       await expect(
         service.cerrarTicket('1', {} as any, TENANT),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(ConflictException);
+
+      expect(httpClientMock.put).not.toHaveBeenCalled();
+      expect(repoMock.save).not.toHaveBeenCalled();
+      expect(publisherMock.publishEvent).not.toHaveBeenCalled();
     });
 
     it('lanza BadRequestException si se intenta reactivar el ticket', async () => {

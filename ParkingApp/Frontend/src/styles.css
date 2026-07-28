@@ -321,6 +321,7 @@ td.actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .espacio-card.disponible { border-left-color: var(--green); }
 .espacio-card.ocupado { border-left-color: var(--red); }
 .espacio-card.reservado { border-left-color: var(--yellow); }
+.espacio-card.mantenimiento { border-left-color: var(--muted); opacity: 0.75; }
 
 .espacio-head { display: flex; justify-content: space-between; align-items: center; }
 .espacio-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.3rem; }

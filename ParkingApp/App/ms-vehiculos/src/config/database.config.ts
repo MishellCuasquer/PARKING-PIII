@@ -3,6 +3,7 @@ import { Vehiculo } from '../vehiculos/entities/vehiculo.entity';
 import { Auto } from '../vehiculos/entities/auto.entity';
 import { Motocicleta } from '../vehiculos/entities/motocicleta.entity';
 import { Camioneta } from '../vehiculos/entities/camioneta.entity';
+import { OutboxEvent } from '../common/entities/outbox-event.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -11,7 +12,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
   username: process.env.DB_USUARIO ?? 'postgres',
   password: process.env.DB_CONTRASENA ?? '123',
   database: process.env.DB_NOMBRE ?? 'vehiculos_db',
-  entities: [Vehiculo, Auto, Motocicleta, Camioneta],
+  entities: [Vehiculo, Auto, Motocicleta, Camioneta, OutboxEvent],
   synchronize: true, // Solo desarrollo
   logging: true,
 };

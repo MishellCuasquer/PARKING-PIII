@@ -44,6 +44,8 @@ describe('AuditConsumer', () => {
     };
     connectionMock = {
       createChannel: jest.fn().mockResolvedValue(channelMock),
+      // El consumidor se suscribe a 'close'/'error' para reconectar
+      on: jest.fn(),
     };
     (amqp.connect as jest.Mock).mockResolvedValue(connectionMock);
     consumer = new AuditConsumer(
@@ -187,6 +189,43 @@ describe('AuditConsumer', () => {
       expect.any(Function),
       { noAck: false },
     );
+    jest.useRealTimers();
+  });
+
+  /**
+   * Escenario 6: al reiniciarse el broker se pierde una conexión YA
+   * establecida. Sin este manejador el consumidor seguía vivo pero mudo y los
+   * mensajes se acumulaban en la cola sin que nadie los procesara.
+   */
+  it('vuelve a suscribirse cuando se cae una conexión ya establecida', async () => {
+    jest.useFakeTimers();
+    await consumer.onModuleInit();
+    expect(channelMock.consume).toHaveBeenCalledTimes(1);
+
+    // Se dispara el 'close' que registró el consumidor al conectar
+    const onClose = connectionMock.on.mock.calls.find((c: any[]) => c[0] === 'close')[1];
+    onClose();
+
+    await jest.advanceTimersByTimeAsync(5000);
+
+    expect(amqp.connect).toHaveBeenCalledTimes(2);
+    expect(channelMock.consume).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
+  });
+
+  it('no encadena reconexiones cuando close y error llegan juntos', async () => {
+    jest.useFakeTimers();
+    await consumer.onModuleInit();
+
+    const onClose = connectionMock.on.mock.calls.find((c: any[]) => c[0] === 'close')[1];
+    const onError = connectionMock.on.mock.calls.find((c: any[]) => c[0] === 'error')[1];
+    onError(new Error('roto'));
+    onClose();
+
+    await jest.advanceTimersByTimeAsync(5000);
+
+    // Un solo reintento, no dos
+    expect(amqp.connect).toHaveBeenCalledTimes(2);
     jest.useRealTimers();
   });
 });

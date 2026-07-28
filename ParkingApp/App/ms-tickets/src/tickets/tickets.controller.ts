@@ -13,6 +13,7 @@ import {
   UseGuards,
   Headers,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -45,9 +46,21 @@ export class TicketsController {
     return req.user?.userId;
   }
 
-  // Tenant del token: todo el aislamiento de tickets se basa en este claim
+  /**
+   * Tenant del token: todo el aislamiento de tickets se basa en este claim.
+   *
+   * Un tenant distinto en la cabecera o en la query se rechaza con 403 en vez
+   * de ignorarse, para que un intento de saltar de empresa no responda 200.
+   */
   private tenantId(req: any): string | null {
-    return req.user?.tenantId ?? null;
+    const tenantDelToken: string | null = req.user?.tenantId ?? null;
+    const solicitado =
+      (req.headers['x-tenant-id'] as string) || (req.query?.tenant as string) || null;
+
+    if (solicitado && solicitado !== tenantDelToken) {
+      throw new ForbiddenException('El tenant solicitado no coincide con el de la sesión');
+    }
+    return tenantDelToken;
   }
 
   private clientIp(req: any): string {

@@ -3,8 +3,20 @@ import { espaciosApi, zonasApi } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import { ErrorMsg, EstadoBadge, SuccessMsg } from '../components/Feedback';
 
-const ESTADOS = ['TODOS', 'DISPONIBLE', 'OCUPADO', 'RESERVADO'];
+const ESTADOS = ['TODOS', 'DISPONIBLE', 'OCUPADO', 'RESERVADO', 'MANTENIMIENTO'];
 const TIPOS_ESPACIO = ['AUTO', 'MOTO', 'BUSETA', 'BUS', 'CAMION'];
+
+/**
+ * Estados a los que se puede pasar desde cada estado actual.
+ * Refleja la máquina de estados de ms-zonas: ofrecer aquí una transición que el
+ * backend va a rechazar solo sirve para que el operador reciba un 409.
+ */
+const TRANSICIONES = {
+  DISPONIBLE: ['OCUPADO', 'RESERVADO', 'MANTENIMIENTO'],
+  OCUPADO: ['DISPONIBLE'],
+  RESERVADO: ['DISPONIBLE', 'OCUPADO', 'MANTENIMIENTO'],
+  MANTENIMIENTO: ['DISPONIBLE'],
+};
 
 export default function EspaciosPage() {
   const { user, hasRole } = useAuth();
@@ -33,6 +45,7 @@ export default function EspaciosPage() {
   // refresca el panel. Los eventos traen idTenant: solo se atienden los de mi empresa.
   useEffect(() => {
     const source = new EventSource('/api/espacios/stream');
+
     source.addEventListener('espacio', (ev) => {
       try {
         const data = JSON.parse(ev.data);
@@ -43,6 +56,16 @@ export default function EspaciosPage() {
         // evento con formato inesperado: se ignora
       }
     });
+
+    // El servidor manda el estado completo al abrir el stream. Es lo que hace
+    // segura la reconexión: EventSource reconecta solo tras un corte, pero los
+    // eventos ocurridos mientras estuvo caído no se reenvían, y sin este
+    // snapshot el panel se quedaría mostrando el estado previo al corte.
+    source.addEventListener('init', () => {
+      setSseActivo(true);
+      load();
+    });
+
     source.onopen = () => setSseActivo(true);
     source.onerror = () => setSseActivo(false);
     return () => source.close();
@@ -194,13 +217,11 @@ export default function EspaciosPage() {
                     }}
                   >
                     <option value="">Cambiar estado…</option>
-                    {['DISPONIBLE', 'OCUPADO', 'RESERVADO']
-                      .filter((s) => s !== e.estado)
-                      .map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
+                    {(TRANSICIONES[e.estado] ?? []).map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
                   </select>
                   <button
                     className="btn btn-small btn-danger"

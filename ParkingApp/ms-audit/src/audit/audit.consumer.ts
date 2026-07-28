@@ -6,11 +6,14 @@ import { plainToClass } from 'class-transformer';
 import { CreateAuditEventDto } from './dto/create-audit-event.dto';
 import { validate, ValidationError } from 'class-validator';
 
+const RECONEXION_MS = 5000;
+
 @Injectable()
 export class AuditConsumer implements OnModuleInit {
   private readonly logger = new Logger(AuditConsumer.name);
   private connection: any;
   private channel: any;
+  private reconexionProgramada = false;
 
   constructor(
     private readonly configService: ConfigService,
@@ -41,13 +44,36 @@ export class AuditConsumer implements OnModuleInit {
     try {
       this.connection = await amqp.connect(url);
       this.channel = await this.connection.createChannel();
+
+      // Reconexión tras perder una conexión YA establecida. Sin esto, un
+      // reinicio del broker dejaba al consumidor vivo pero mudo: los mensajes
+      // se acumulaban en la cola (no se perdían, es durable) y nadie los
+      // procesaba hasta reiniciar el contenedor a mano.
+      this.connection.on('close', () => this.programarReconexion('conexión cerrada'));
+      this.connection.on('error', (err: Error) =>
+        this.programarReconexion(`error de conexión: ${err.message}`),
+      );
+
       this.logger.log(`Connected to RabbitMQ at ${url}`);
       return true;
     } catch (error) {
       this.logger.error(`Failed to connect to RabbitMQ at ${error}`);
-      setTimeout(() => this.init(), 5000); // Retry after 5 seconds
+      this.programarReconexion('no se pudo conectar');
       return false;
     }
+  }
+
+  // Un solo reintento en vuelo: 'close' y 'error' suelen dispararse juntos
+  private programarReconexion(motivo: string) {
+    if (this.reconexionProgramada) return;
+    this.reconexionProgramada = true;
+    this.channel = undefined;
+    this.connection = undefined;
+    this.logger.warn(`RabbitMQ ${motivo}; reintentando en ${RECONEXION_MS / 1000}s`);
+    setTimeout(() => {
+      this.reconexionProgramada = false;
+      void this.init();
+    }, RECONEXION_MS);
   }
 
   private async consume() {

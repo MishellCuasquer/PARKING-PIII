@@ -1,5 +1,6 @@
 package ec.edu.espe.zonas.config;
 
+import ec.edu.espe.zonas.excepciones.TenantNoAutorizadoException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -29,6 +30,9 @@ public final class TenantContext {
 
         String claim = jwtAuth.getToken().getClaimAsString("tenantId");
         if (claim != null && !claim.isBlank()) {
+            // Una cabecera que contradice al token es un intento de saltar de
+            // empresa: se rechaza en vez de descartarse en silencio.
+            rechazarSiContradiceElToken(claim);
             return parse(claim);
         }
 
@@ -41,6 +45,20 @@ public final class TenantContext {
             }
         }
         return null;
+    }
+
+    private static void rechazarSiContradiceElToken(String claimTenant) {
+        if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes sra)) {
+            return;
+        }
+        String solicitado = sra.getRequest().getHeader(TENANT_HEADER);
+        if (solicitado == null || solicitado.isBlank()) {
+            solicitado = sra.getRequest().getParameter("tenant");
+        }
+        if (solicitado != null && !solicitado.isBlank() && !solicitado.equals(claimTenant)) {
+            throw new TenantNoAutorizadoException(
+                    "El tenant solicitado no coincide con el de la sesión");
+        }
     }
 
     private static UUID parse(String value) {

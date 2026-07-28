@@ -14,6 +14,7 @@ export function EstadoBadge({ estado }) {
       DISPONIBLE: 'badge badge-green',
       OCUPADO: 'badge badge-red',
       RESERVADO: 'badge badge-yellow',
+      MANTENIMIENTO: 'badge badge-gray',
     }[estado] || 'badge';
   return <span className={cls}>{estado}</span>;
 }

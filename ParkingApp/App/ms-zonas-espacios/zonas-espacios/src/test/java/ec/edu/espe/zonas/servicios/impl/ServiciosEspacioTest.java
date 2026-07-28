@@ -7,6 +7,7 @@ import ec.edu.espe.zonas.entidades.Espacio;
 import ec.edu.espe.zonas.entidades.EstadoEspacio;
 import ec.edu.espe.zonas.entidades.TipoEspacio;
 import ec.edu.espe.zonas.entidades.Zona;
+import ec.edu.espe.zonas.excepciones.ConflictoEstadoException;
 import ec.edu.espe.zonas.repositorios.EspacioRepositorio;
 import ec.edu.espe.zonas.repositorios.ZonaRepositorio;
 import org.junit.jupiter.api.AfterEach;
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -103,7 +105,7 @@ class ServiciosEspacioTest {
     void cambiarEstado_actualizaElEstadoYPublicaAuditoria() {
         UUID id = UUID.randomUUID();
         Espacio espacio = Espacio.builder().id(id).nombre("E1").estado(EstadoEspacio.DISPONIBLE).build();
-        when(espacioRepositorio.findById(id)).thenReturn(Optional.of(espacio));
+        when(espacioRepositorio.findByIdForUpdate(id)).thenReturn(Optional.of(espacio));
         when(espacioRepositorio.save(any(Espacio.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         EspacioResponseDto result = serviciosEspacio.cambiarEstado(id, EstadoEspacio.OCUPADO);
@@ -112,11 +114,80 @@ class ServiciosEspacioTest {
         verify(auditPublisher).publish(eq("UPDATE"), eq("Espacio"), anyMap());
     }
 
+    /** Escenario 9: un espacio con un vehiculo dentro no puede entrar en mantenimiento. */
+    @Test
+    void cambiarEstado_rechazaMantenimientoSobreUnEspacioOcupado() {
+        UUID id = UUID.randomUUID();
+        Espacio espacio = Espacio.builder().id(id).nombre("E1").estado(EstadoEspacio.OCUPADO).build();
+        when(espacioRepositorio.findByIdForUpdate(id)).thenReturn(Optional.of(espacio));
+
+        assertThatThrownBy(() -> serviciosEspacio.cambiarEstado(id, EstadoEspacio.MANTENIMIENTO))
+                .isInstanceOf(ConflictoEstadoException.class)
+                .hasMessageContaining("vehículo dentro");
+        assertThat(espacio.getEstado()).isEqualTo(EstadoEspacio.OCUPADO);
+        verify(espacioRepositorio, never()).save(any(Espacio.class));
+    }
+
+    /** Escenario 3/8: ocupar una plaza que ya no esta libre debe fallar con el estado real. */
+    @Test
+    void cambiarEstado_rechazaOcuparUnEspacioEnMantenimiento() {
+        UUID id = UUID.randomUUID();
+        Espacio espacio = Espacio.builder().id(id).nombre("E5").estado(EstadoEspacio.MANTENIMIENTO).build();
+        when(espacioRepositorio.findByIdForUpdate(id)).thenReturn(Optional.of(espacio));
+
+        assertThatThrownBy(() -> serviciosEspacio.cambiarEstado(id, EstadoEspacio.OCUPADO))
+                .isInstanceOf(ConflictoEstadoException.class)
+                .hasMessageContaining("no está disponible (estado: mantenimiento)");
+    }
+
+    /** El cierre del ticket siempre puede liberar la plaza. */
+    @Test
+    void cambiarEstado_permiteLiberarUnEspacioOcupado() {
+        UUID id = UUID.randomUUID();
+        Espacio espacio = Espacio.builder().id(id).nombre("E1").estado(EstadoEspacio.OCUPADO).build();
+        when(espacioRepositorio.findByIdForUpdate(id)).thenReturn(Optional.of(espacio));
+        when(espacioRepositorio.save(any(Espacio.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EspacioResponseDto result = serviciosEspacio.cambiarEstado(id, EstadoEspacio.DISPONIBLE);
+
+        assertThat(result.getEstado()).isEqualTo("DISPONIBLE");
+    }
+
+    /**
+     * Escenario 3: el perdedor de la carrera llega cuando el espacio ya está
+     * OCUPADO y debe recibir 409. Es la comprobación que impide que dos
+     * peticiones simultáneas se lleven la misma plaza.
+     */
+    @Test
+    void cambiarEstado_rechazaOcuparUnEspacioYaOcupado() {
+        UUID id = UUID.randomUUID();
+        Espacio espacio = Espacio.builder().id(id).nombre("E1").estado(EstadoEspacio.OCUPADO).build();
+        when(espacioRepositorio.findByIdForUpdate(id)).thenReturn(Optional.of(espacio));
+
+        assertThatThrownBy(() -> serviciosEspacio.cambiarEstado(id, EstadoEspacio.OCUPADO))
+                .isInstanceOf(ConflictoEstadoException.class)
+                .hasMessageContaining("no está disponible (estado: ocupado)");
+        verify(espacioRepositorio, never()).save(any(Espacio.class));
+    }
+
+    /** Liberar sí es idempotente: el reintento de un cierre no debe fallar. */
+    @Test
+    void cambiarEstado_admiteLiberarUnEspacioYaLibre() {
+        UUID id = UUID.randomUUID();
+        Espacio espacio = Espacio.builder().id(id).nombre("E1").estado(EstadoEspacio.DISPONIBLE).build();
+        when(espacioRepositorio.findByIdForUpdate(id)).thenReturn(Optional.of(espacio));
+        when(espacioRepositorio.save(any(Espacio.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EspacioResponseDto result = serviciosEspacio.cambiarEstado(id, EstadoEspacio.DISPONIBLE);
+
+        assertThat(result.getEstado()).isEqualTo("DISPONIBLE");
+    }
+
     @Test
     void reservarEspacio_reservaCuandoEstaDisponible() {
         UUID id = UUID.randomUUID();
         Espacio espacio = Espacio.builder().id(id).nombre("E1").estado(EstadoEspacio.DISPONIBLE).build();
-        when(espacioRepositorio.findById(id)).thenReturn(Optional.of(espacio));
+        when(espacioRepositorio.findByIdForUpdate(id)).thenReturn(Optional.of(espacio));
         when(espacioRepositorio.save(any(Espacio.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         EspacioResponseDto result = serviciosEspacio.reservarEspacio(id);
@@ -128,10 +199,10 @@ class ServiciosEspacioTest {
     void reservarEspacio_lanzaExcepcionSiNoEstaDisponible() {
         UUID id = UUID.randomUUID();
         Espacio espacio = Espacio.builder().id(id).nombre("E1").estado(EstadoEspacio.OCUPADO).build();
-        when(espacioRepositorio.findById(id)).thenReturn(Optional.of(espacio));
+        when(espacioRepositorio.findByIdForUpdate(id)).thenReturn(Optional.of(espacio));
 
         assertThatThrownBy(() -> serviciosEspacio.reservarEspacio(id))
-                .isInstanceOf(RuntimeException.class);
+                .isInstanceOf(ConflictoEstadoException.class);
     }
 
     @Test

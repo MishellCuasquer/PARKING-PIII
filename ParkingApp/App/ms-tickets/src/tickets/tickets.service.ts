@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, IsNull, Repository } from 'typeorm';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -7,7 +13,7 @@ import { Ticket } from './entities/ticket.entity';
 import { ConfigService } from '@nestjs/config';
 import { Persona } from './interfaces/persona.interface';
 import { Espacio } from './interfaces/espacio.interface';
-import { HttpClientService } from '../common/htppl-cliente.service';
+import { HttpClientService, UpstreamHttpError } from '../common/htppl-cliente.service';
 import { ServiceTokenService } from '../auth/service-token.service';
 import { AuditEvent, EventPublisher } from '../common/event-publisher.service';
 import { CacheService } from '../common/cache.service';
@@ -105,26 +111,28 @@ export class TicketsService {
       throw new BadRequestException(`No se encontró un vehículo con placa ${createTicketDto.placa}`);
     }
 
-    // ms-zonas valida con el token del usuario que el espacio sea de su tenant (ajeno → 404)
-    const espacio = await this.buscarEspacioDisponible(createTicketDto.idEspacio, tenantId, authorization);
-    if (!espacio) {
-      throw new BadRequestException(
-        `No se encontró un espacio disponible con ID ${createTicketDto.idEspacio}`,
-      );
-    }
-
-    this.validarCompatibilidad(vehiculo, espacio);
-
+    // La unicidad se comprueba ANTES de tocar el espacio: si se rechazara
+    // después, el espacio ya habría quedado ocupado por un ticket inexistente.
     const ticketActivo = await this.validarTicketActivo(createTicketDto.placa);
     if (ticketActivo) {
       const mismaEmpresa = (ticketActivo.tenantId ?? null) === (tenantId ?? null);
-      throw new BadRequestException(
+      throw new ConflictException(
         mismaEmpresa
           ? `El vehículo con placa ${createTicketDto.placa} ya tiene un ticket activo`
           : `El vehículo con placa ${createTicketDto.placa} está dentro de otro parqueadero. ` +
             'Debe registrarse su salida antes de poder ingresar aquí.',
       );
     }
+
+    // ms-zonas valida con el token del usuario que el espacio sea de su tenant (ajeno → 404)
+    const espacio = await this.buscarEspacio(createTicketDto.idEspacio, authorization);
+    if (!espacio) {
+      throw new NotFoundException(
+        `No se encontró un espacio con ID ${createTicketDto.idEspacio}`,
+      );
+    }
+
+    this.validarCompatibilidad(vehiculo, espacio);
 
     const ticketGuardado = await this.emitirTicket(createTicketDto, espacio, tenantId, authorization, emisorUserId);
     this.logger.log(`Ticket creado con ID ${ticketGuardado.id} para placa ${createTicketDto.placa}`);
@@ -177,8 +185,10 @@ export class TicketsService {
   ): Promise<Ticket> {
     const ticket = await this.findOne(id, tenantId);
 
+    // Se comprueba antes de liberar el espacio y de publicar el evento: un
+    // segundo cierre no debe soltar la plaza otra vez ni duplicar la auditoría.
     if (!ticket.activo) {
-      throw new BadRequestException(`El ticket con id ${id} ya está cerrado`);
+      throw new ConflictException(`El ticket con id ${id} ya está cerrado`);
     }
 
     if (updateTicketDto.activo === true) {
@@ -297,34 +307,32 @@ export class TicketsService {
     }
   }
 
-  private async buscarEspacioDisponible(
-    idEspacio: string,
-    tenantId: string | null,
-    authorization?: string,
-  ): Promise<Espacio | null> {
+  /**
+   * Lee el espacio de ms-zonas SIN pasar por la caché.
+   *
+   * El estado de un espacio cambia por debajo de este servicio (un
+   * administrador puede ponerlo en mantenimiento desde ms-zonas) y una copia
+   * cacheada durante 60 s bastaba para emitir un ticket sobre una plaza que ya
+   * no estaba libre. La caché sigue valiéndose para vehículo y persona, que sí
+   * son estables.
+   *
+   * Aquí no se decide la disponibilidad: de eso se encarga la ocupación
+   * atómica en {@link emitirTicket}. Esta lectura solo aporta el tipo de
+   * espacio y el nombre de la zona.
+   */
+  private async buscarEspacio(idEspacio: string, authorization?: string): Promise<Espacio | null> {
     try {
-      const cacheKey = `t:${tenantId ?? 'global'}:espacio:${idEspacio}`;
-      let espacio = await this.cacheService.get<EspacioApiResponse>(cacheKey);
-      if (!espacio) {
-        const url = `${this.espacioUrl}/${idEspacio}`;
-        espacio = await this.httpClient.get<EspacioApiResponse>(url, authorization);
-        await this.cacheService.set(cacheKey, espacio);
-      }
-      const espacioId = String(espacio.id);
-
-      if (espacio.estado !== 'DISPONIBLE') {
-        this.logger.warn(`Espacio ${idEspacio} no está DISPONIBLE, estado actual: ${espacio.estado}`);
-        return null;
-      }
+      const url = `${this.espacioUrl}/${idEspacio}`;
+      const espacio = await this.httpClient.get<EspacioApiResponse>(url, authorization);
 
       return {
-        id: espacioId,
+        id: String(espacio.id),
         estado: espacio.estado,
         codigo: espacio.nombre,
         zona: espacio.nombreZona ?? '',
         nombreZona: espacio.nombreZona,
         tipoEspacio: espacio.tipoEspacio,
-        disponible: true,
+        disponible: espacio.estado === 'DISPONIBLE',
       };
     } catch (error) {
       this.logger.error(`Error al buscar espacio ${idEspacio}: ${error}`);
@@ -381,6 +389,14 @@ export class TicketsService {
     return Number((horas * tarifa).toFixed(2));
   }
 
+  /**
+   * Emite el ticket ocupando primero el espacio.
+   *
+   * El orden importa: la ocupación es la operación atómica que decide quién
+   * gana la plaza. ms-zonas la resuelve bajo bloqueo pesimista y responde 409
+   * si el espacio dejó de estar libre entre la lectura y este momento, así que
+   * de dos peticiones simultáneas solo una llega a crear el ticket.
+   */
   private async emitirTicket(
     createTicketDto: CreateTicketDto,
     espacio: Espacio,
@@ -388,7 +404,7 @@ export class TicketsService {
     authorization?: string,
     emisorUserId?: string,
   ): Promise<Ticket> {
-    await this.actualizarEstadoEspacio(createTicketDto.idEspacio, 'OCUPADO', tenantId, authorization);
+    await this.ocuparEspacio(createTicketDto.idEspacio, tenantId, authorization);
 
     const ticket = this.ticketRepository.create({
       placa: createTicketDto.placa,
@@ -406,6 +422,32 @@ export class TicketsService {
       return await this.ticketRepository.save(ticket);
     } catch (error) {
       await this.actualizarEstadoEspacio(createTicketDto.idEspacio, 'DISPONIBLE', tenantId, authorization);
+      throw error;
+    }
+  }
+
+  /**
+   * Intenta ocupar el espacio y traduce el rechazo de ms-zonas a un 409 propio.
+   *
+   * El mensaje se reenvía tal cual porque ms-zonas ya explica el motivo con el
+   * estado real ("el espacio no está disponible (estado: mantenimiento)"), que
+   * es justo lo que el operador necesita leer.
+   */
+  private async ocuparEspacio(
+    idEspacio: string,
+    tenantId: string | null,
+    authorization?: string,
+  ): Promise<void> {
+    try {
+      await this.actualizarEstadoEspacio(idEspacio, 'OCUPADO', tenantId, authorization);
+    } catch (error) {
+      if (error instanceof UpstreamHttpError && error.status === 409) {
+        this.logger.warn(`Espacio ${idEspacio} no se pudo ocupar: ${error.detalle}`);
+        throw new ConflictException(error.detalle);
+      }
+      if (error instanceof UpstreamHttpError && error.status === 404) {
+        throw new NotFoundException(`No se encontró un espacio con ID ${idEspacio}`);
+      }
       throw error;
     }
   }

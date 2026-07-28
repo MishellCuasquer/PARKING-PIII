@@ -7,6 +7,8 @@ import ec.edu.espe.zonas.dto.response.EspacioResponseDto;
 import ec.edu.espe.zonas.entidades.Espacio;
 import ec.edu.espe.zonas.entidades.EstadoEspacio;
 import ec.edu.espe.zonas.entidades.Zona;
+import ec.edu.espe.zonas.excepciones.ConflictoEstadoException;
+import ec.edu.espe.zonas.excepciones.RecursoNoEncontradoException;
 import ec.edu.espe.zonas.repositorios.EspacioRepositorio;
 import ec.edu.espe.zonas.repositorios.ZonaRepositorio;
 import ec.edu.espe.zonas.servicios.interfaz.EspacioServicio;
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 public class ServiciosEspacio implements EspacioServicio {
 
     private static final String ENTIDAD_ESPACIO = "Espacio";
+    private static final String ESPACIO_NO_ENCONTRADO = "Espacio no encontrado con id: ";
 
     @Autowired
     private EspacioRepositorio espacioRepositorio;
@@ -63,13 +66,49 @@ public class ServiciosEspacio implements EspacioServicio {
 
     // Espacio de otro tenant → mismo error que si no existiera
     private Espacio cargarEspacioDelTenant(UUID id) {
-        Espacio espacio = espacioRepositorio.findById(id)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
+        return verificarTenant(
+                espacioRepositorio.findById(id)
+                        .orElseThrow(() -> new RecursoNoEncontradoException(ESPACIO_NO_ENCONTRADO + id)),
+                id);
+    }
+
+    /**
+     * Igual que {@link #cargarEspacioDelTenant}, pero tomando el bloqueo de
+     * escritura sobre la fila. Solo lo usan las operaciones que van a cambiar el
+     * estado: bloquear en las lecturas serializaría el panel entero sin motivo.
+     */
+    private Espacio cargarEspacioDelTenantParaActualizar(UUID id) {
+        return verificarTenant(
+                espacioRepositorio.findByIdForUpdate(id)
+                        .orElseThrow(() -> new RecursoNoEncontradoException(ESPACIO_NO_ENCONTRADO + id)),
+                id);
+    }
+
+    private Espacio verificarTenant(Espacio espacio, UUID id) {
         UUID tenantId = TenantContext.currentTenantId();
         if (tenantId != null && !tenantId.equals(espacio.getIdTenant())) {
-            throw new RuntimeException("Espacio no encontrado con id: " + id);
+            throw new RecursoNoEncontradoException(ESPACIO_NO_ENCONTRADO + id);
         }
         return espacio;
+    }
+
+    /**
+     * Mensaje de rechazo de una transición.
+     *
+     * Nombra el estado actual porque es la información que necesita quien lo
+     * recibe: ms-tickets se la reenvía tal cual al operador, que así sabe si la
+     * plaza está ocupada o fuera de servicio.
+     */
+    private String mensajeTransicionInvalida(Espacio espacio, EstadoEspacio actual, EstadoEspacio destino) {
+        if (actual == EstadoEspacio.OCUPADO && destino == EstadoEspacio.MANTENIMIENTO) {
+            return "El espacio " + espacio.getNombre() + " tiene un vehículo dentro. "
+                    + "Registre la salida antes de ponerlo en mantenimiento.";
+        }
+        if (destino == EstadoEspacio.OCUPADO) {
+            return "El espacio no está disponible (estado: " + actual.name().toLowerCase() + ")";
+        }
+        return "Transición de estado no permitida para el espacio " + espacio.getNombre()
+                + ": " + actual.name().toLowerCase() + " → " + destino.name().toLowerCase();
     }
 
     /**
@@ -84,18 +123,19 @@ public class ServiciosEspacio implements EspacioServicio {
 
         // Intentamos obtener la zona con bloqueo pesimista para evitar race conditions
         Zona zona = zonaRepositorio.findByIdForUpdate(idZona)
-                .orElseThrow(() -> new RuntimeException("Zona no encontrada con id: " + idZona));
+                .orElseThrow(() -> new RecursoNoEncontradoException("Zona no encontrada con id: " + idZona));
 
         // La zona debe pertenecer al tenant del caller
         UUID tenantId = TenantContext.currentTenantId();
         if (tenantId != null && !tenantId.equals(zona.getIdTenant())) {
-            throw new RuntimeException("Zona no encontrada con id: " + idZona);
+            throw new RecursoNoEncontradoException("Zona no encontrada con id: " + idZona);
         }
 
         // Contar los espacios actuales de forma eficiente
         long cantidadActual = espacioRepositorio.countByZonaId(zona.getId());
         if (cantidadActual >= zona.getCapacidad()) {
-            throw new RuntimeException("La zona ha alcanzado su capacidad máxima de " + zona.getCapacidad() + " espacios");
+            throw new ConflictoEstadoException(
+                    "La zona ha alcanzado su capacidad máxima de " + zona.getCapacidad() + " espacios");
         }
 
         // Generar nombre del espacio: ZON-VIP-01-001. Se avanza hasta el primer
@@ -140,21 +180,15 @@ public class ServiciosEspacio implements EspacioServicio {
         // El id viene de la ruta (PUT /api/espacios/{id}), no del cuerpo: el
         // controlador ya lo tenía y antes se descartaba, por eso este método
         // lanzaba siempre y el endpoint devolvía 500.
-        Espacio espacio = espacioRepositorio.findById(id)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + id));
-
         // Aislamiento multitenant: no se puede tocar un espacio de otra empresa.
-        UUID tenantId = TenantContext.currentTenantId();
-        if (tenantId != null && !tenantId.equals(espacio.getIdTenant())) {
-            throw new RuntimeException("Espacio no encontrado con id: " + id);
-        }
+        Espacio espacio = cargarEspacioDelTenant(id);
 
         // Cambiar el tipo de un espacio OCUPADO dejaría dentro un vehículo que
         // ya no corresponde a la plaza, así que solo se permite si está libre.
         boolean cambiaTipo = requestDto.getTipo() != null
                 && !requestDto.getTipo().equals(espacio.getTipo());
         if (cambiaTipo && espacio.getEstado() == EstadoEspacio.OCUPADO) {
-            throw new RuntimeException(
+            throw new ConflictoEstadoException(
                     "No se puede cambiar el tipo de un espacio ocupado. Registre primero la salida del vehículo.");
         }
 
@@ -208,12 +242,22 @@ public class ServiciosEspacio implements EspacioServicio {
     }
 
     /**
-     * Cambiar estado de un espacio: DISPONIBLE a OCUPADO
+     * Cambia el estado de un espacio validando que la transición sea legal.
+     *
+     * La fila se lee con bloqueo pesimista: si dos peticiones intentan ocupar la
+     * misma plaza a la vez, la segunda espera, vuelve a leer el estado ya
+     * comprometido por la primera y falla con 409 en lugar de sobrescribirla.
+     * Sin ese bloqueo ambas leerían DISPONIBLE y las dos creerían haber ganado.
      */
     @Override
     @Transactional
     public EspacioResponseDto cambiarEstado(UUID id, EstadoEspacio estado) {
-        Espacio espacio = cargarEspacioDelTenant(id);
+        Espacio espacio = cargarEspacioDelTenantParaActualizar(id);
+        EstadoEspacio estadoActual = espacio.getEstado();
+
+        if (estadoActual != null && !estadoActual.puedeTransicionarA(estado)) {
+            throw new ConflictoEstadoException(mensajeTransicionInvalida(espacio, estadoActual, estado));
+        }
 
         actualizarEstadoEspacio(espacio, estado);
         Espacio espacioActualizado = espacioRepositorio.save(espacio);
@@ -234,10 +278,12 @@ public class ServiciosEspacio implements EspacioServicio {
     @Override
     @Transactional
     public EspacioResponseDto reservarEspacio(UUID id) {
-        Espacio espacio = cargarEspacioDelTenant(id);
+        Espacio espacio = cargarEspacioDelTenantParaActualizar(id);
 
         if (espacio.getEstado() != EstadoEspacio.DISPONIBLE) {
-            throw new RuntimeException("Solo se pueden reservar espacios en estado DISPONIBLE");
+            throw new ConflictoEstadoException(
+                    "El espacio no está disponible (estado: "
+                            + espacio.getEstado().name().toLowerCase() + ")");
         }
 
         actualizarEstadoEspacio(espacio, EstadoEspacio.RESERVADO);

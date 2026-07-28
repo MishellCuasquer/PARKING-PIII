@@ -26,7 +26,53 @@ orden correcto (kubectl los procesa alfabéticamente):
 | `51-ingress-api.yaml` | `api.parqueadero.espe.edu.ec` → Kong (TLS) |
 | `60-hpa.yaml` | Escalado horizontal por microservicio |
 
+## Cuánta memoria pide todo esto
+
+Antes de desplegar conviene mirar la suma, porque es la causa habitual de que
+el clúster se quede "colgado": los pods no fallan, se quedan en `Pending`
+peleándose por memoria y el nodo se arrastra.
+
+| Componente | Réplicas | Request | Total |
+|---|---:|---:|---:|
+| postgres | 1 | 256Mi | 256Mi |
+| mysql-zonas | 1 | 512Mi | 512Mi |
+| redis | 1 | 64Mi | 64Mi |
+| rabbitmq | 1 | 256Mi | 256Mi |
+| kong | 2 | 256Mi | 512Mi |
+| ms-usuarios | 2 | 512Mi | 1024Mi |
+| ms-zonas-espacios | 1 | 512Mi | 512Mi |
+| ms-vehiculos | 2 | 192Mi | 384Mi |
+| ms-tickets | 2 | 192Mi | 384Mi |
+| ms-audit | 2 | 192Mi | 384Mi |
+| frontend | 2 | 64Mi | 128Mi |
+| monitoreo | 1 | 32Mi | 32Mi |
+| **Total** | | | **≈ 4.4 Gi** |
+
+Y eso es solo `requests`: hay que sumarle `kube-system`. **Un nodo de 4 GB no
+llega.** Para un portátil, arranca minikube con margen y usa el perfil ligero:
+
+```powershell
+minikube start --memory=6144 --cpus=4
+```
+
 ## Despliegue
+
+Usa el script, que aplica los manifiestos **por fases** y espera a que cada
+capa esté lista antes de seguir. Aplicar todo de golpe es lo que satura el
+nodo.
+
+```powershell
+# Perfil ligero: 1 réplica por componente y sin HPA (≈2.8 Gi). Recomendado en local.
+.\k8s\desplegar.ps1 -Ligero
+
+# Despliegue completo (réplicas y HPA como en los manifiestos)
+.\k8s\desplegar.ps1
+```
+
+> **Apaga antes Docker Compose.** Los dos entornos compiten por la misma
+> memoria de la VM de Docker/WSL: `docker compose -f ParkingApp/docker-compose.yml down`.
+
+Si prefieres hacerlo a mano, el orden es el mismo que sigue el script:
 
 ```bash
 # 1. Prerrequisitos en el clúster
@@ -34,14 +80,21 @@ orden correcto (kubectl los procesa alfabéticamente):
 #    - metrics-server (para los HPA)
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
-# 2. Aplicar todo
-kubectl apply -f k8s/
+# 2. Namespace y configuración
+kubectl apply -f k8s/00-namespace.yaml -f k8s/01-configmap.yaml -f k8s/02-secrets.yaml
 
-# 3. Esperar a que la infraestructura esté lista antes que los microservicios
+# 3. Bases de datos, esperando a cada una
+kubectl apply -f k8s/10-postgres.yaml
 kubectl -n parqueadero rollout status statefulset/postgres
+kubectl apply -f k8s/11-mysql-zonas.yaml
+kubectl -n parqueadero rollout status statefulset/mysql-zonas
+
+# 4. Redis y RabbitMQ
+kubectl apply -f k8s/12-redis.yaml -f k8s/13-rabbitmq.yaml
 kubectl -n parqueadero rollout status statefulset/rabbitmq
 
-# 4. Estado general
+# 5. Microservicios, gateway y web (ver el script para el detalle)
+# 6. Estado general
 kubectl -n parqueadero get pods,svc,ingress,hpa
 ```
 
@@ -103,6 +156,17 @@ dejando los pods eternamente *not ready*.
 **Kong en modo DB-less.** Rutas, plugins y credenciales JWT vienen horneados en
 la imagen desde `ParkingApp/App/kong.yml`. Cambiar una ruta = reconstruir la
 imagen y `kubectl rollout restart deployment/kong`.
+
+**La outbox de auditoría es segura con varias réplicas.** Cada productor
+(usuarios, vehículos, tickets, zonas) guarda el evento en su tabla
+`outbox_event` y un barrido periódico publica lo pendiente. Ese barrido toma
+las filas con `SELECT ... FOR UPDATE SKIP LOCKED` dentro de una transacción:
+sin ese bloqueo, los dos pods de `ms-tickets` leerían el mismo lote y
+publicarían cada evento por duplicado. Con SKIP LOCKED cada pod se lleva un
+lote distinto en lugar de esperarse.
+
+**`ms-audit` sí escala a 2 réplicas.** Son consumidores en competencia sobre la
+misma cola: RabbitMQ reparte los mensajes y cada uno se procesa una sola vez.
 
 ## Verificación tras el despliegue
 

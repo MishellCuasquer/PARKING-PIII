@@ -24,7 +24,18 @@ public class EspacioEventos {
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    public SseEmitter suscribir() {
+    /**
+     * Abre un stream y envía de inmediato el estado completo de los espacios.
+     *
+     * Ese snapshot es lo que hace que una reconexión sea segura: EventSource
+     * reconecta solo tras un corte de red, pero los eventos ocurridos mientras
+     * estuvo caído no se reenvían. Si el cliente solo recibiera los cambios
+     * posteriores, se quedaría mostrando el estado previo al corte
+     * indefinidamente.
+     *
+     * @param snapshot estado actual de los espacios visibles para quien se suscribe
+     */
+    public SseEmitter suscribir(List<EspacioResponseDto> snapshot) {
         // 0 = sin timeout: la conexión vive hasta que el cliente la cierre
         SseEmitter emitter = new SseEmitter(0L);
         emitters.add(emitter);
@@ -34,7 +45,10 @@ public class EspacioEventos {
         try {
             // Sin este primer evento la respuesta no se vacía al cliente y
             // EventSource nunca dispara onopen (los headers quedan bufferizados)
-            emitter.send(SseEmitter.event().name("init").data("conectado"));
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("accion", "SNAPSHOT");
+            payload.put("espacios", snapshot != null ? snapshot : List.of());
+            emitter.send(SseEmitter.event().name("init").data(payload));
         } catch (Exception e) {
             log.debug("Cliente SSE se desconectó durante el init: {}", e.getMessage());
             emitters.remove(emitter);

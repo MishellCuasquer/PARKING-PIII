@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TicketsModule } from './tickets/tickets.module';
 import { Ticket } from './tickets/entities/ticket.entity';
+import { OutboxEvent } from './common/entities/outbox-event.entity';
 import { AuthModule } from './auth/auth.module';
 
 @Module({
@@ -18,7 +19,7 @@ import { AuthModule } from './auth/auth.module';
         username: configService.get('DB_USER'),
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_NAME'),
-        entities: [Ticket],
+        entities: [Ticket, OutboxEvent],
         synchronize: true, // solo desarrollo
         logging: true,
       }),
