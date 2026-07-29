@@ -1,0 +1,95 @@
+# Redis: caché de ms-vehiculos y ms-tickets.
+#
+# Las claves llevan namespace de tenant (t:{tenantId}:vehiculo:{placa},
+# t:{tenantId}:espacio:{id}, t:{tenantId}:persona:{dni}), así que una sola
+# instancia compartida NO rompe el aislamiento multitenant: dos empresas nunca
+# colisionan en la misma clave.
+#
+# Persistencia AOF activada y PVC propio para que el caché sobreviva a un
+# reinicio del pod (mismo comportamiento que el docker-compose local).
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: parqueadero
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: parqueadero
+  labels:
+    app: redis
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          # timeoutSeconds explícito: igual que en rabbitmq (ver 13-rabbitmq.yaml),
+          # el default de 1s hace que redis-cli venza por simple contención de
+          # CPU del nodo, no porque Redis esté caído, y el kubelet lo mata.
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

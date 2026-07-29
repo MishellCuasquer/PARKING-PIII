@@ -1,0 +1,50 @@
+# Exposición pública de la plataforma bajo parqueadero.espe.edu.ec (requisito 6.3).
+#
+# Estrategia de enrutamiento: TODO entra por el frontend, cuyo nginx hace de
+# proxy hacia Kong para /api y /gw. Es la variante "directamente al servicio del
+# frontend" que contempla el enunciado, y tiene una ventaja concreta: el
+# navegador ve un único origen, así que no hay CORS ni cookies cross-site, y el
+# stream SSE atraviesa una sola capa de proxy en vez de dos.
+#
+# El acceso directo a Kong desde fuera se hace por el host api.parqueadero...
+# (segundo Ingress, abajo), útil para Postman y para la demo del rate limiting.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: parqueadero-frontend
+  namespace: parqueadero
+  labels:
+    app.kubernetes.io/part-of: parqueadero-saas
+  annotations:
+    # --- SSE: sin esto el stream de espacios no llega nunca al navegador ---
+    # El Ingress bufferiza la respuesta por defecto y los eventos se acumulan.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    # Un stream SSE es una conexión que dura horas: con el timeout por defecto
+    # (60s) el navegador se reconectaría cada minuto.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    # --- TLS ---
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - parqueadero.espe.edu.ec
+      # Secret que crea cert-manager. Si el clúster no tiene cert-manager, se
+      # crea a mano con el certificado institucional:
+      #   kubectl -n parqueadero create secret tls parqueadero-tls \
+      #     --cert=parqueadero.crt --key=parqueadero.key
+      secretName: parqueadero-tls
+  rules:
+    - host: parqueadero.espe.edu.ec
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

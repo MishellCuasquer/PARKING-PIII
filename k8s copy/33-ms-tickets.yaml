@@ -1,0 +1,117 @@
+# MS-Tickets (NestJS + PostgreSQL + caché Redis).
+# Orquesta a vehículos, zonas/espacios y personas: es el servicio con más
+# dependencias internas, por eso concentra las URLs del ConfigMap.
+apiVersion: v1
+kind: Service
+metadata:
+  name: tickets
+  namespace: parqueadero
+  labels:
+    app: tickets
+spec:
+  type: ClusterIP
+  selector:
+    app: tickets
+  ports:
+    - name: http
+      port: 3002
+      targetPort: 3002
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tickets
+  namespace: parqueadero
+  labels:
+    app: tickets
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  # 1 réplica en el clúster de demo por la RAM real del nodo de minikube
+  # (~3 GiB). Ver la nota en 30-ms-usuarios.yaml.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tickets
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: tickets
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: tickets
+          image: ghcr.io/mishellcuasquer/parking-piii/ms-tickets:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3002
+          env:
+            - name: PORT
+              value: "3002"
+            - name: HOME
+              value: /tmp
+            - name: DB_NAME
+              value: tickets_db
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: DB_USER }
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: DB_PASSWORD }
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: JWT_SECRET }
+            # Credenciales de la cuenta `service` para las llamadas
+            # máquina-a-máquina hacia vehículos, zonas y personas.
+            - name: SERVICE_USERNAME
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: SERVICE_USERNAME }
+            - name: SERVICE_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: SERVICE_PASSWORD }
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: RABBITMQ_USER }
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: RABBITMQ_PASSWORD }
+          envFrom:
+            - configMapRef:
+                name: parqueadero-config
+          # Mismo caso que ms-vehiculos: la liveness mataba el pod antes de que
+          # Nest arrancara. Aquí importa más, porque tickets espera a que
+          # respondan vehículos, zonas y personas durante su arranque.
+          startupProbe:
+            tcpSocket:
+              port: 3002
+            periodSeconds: 10
+            failureThreshold: 24
+          readinessProbe:
+            tcpSocket:
+              port: 3002
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 3002
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

@@ -1,0 +1,96 @@
+# Kong API Gateway dentro del clúster (requisito 4.1 del enunciado).
+#
+# Modo DB-less: la configuración (rutas, plugins, credenciales JWT) viene
+# horneada en la imagen desde ParkingApp/App/kong.yml, así que no hace falta
+# base de datos ni ConfigMap. Cambiar una ruta = reconstruir la imagen y
+# `kubectl rollout restart`, que es exactamente el flujo que hace el pipeline.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong
+  namespace: parqueadero
+  labels:
+    app: kong
+spec:
+  # ClusterIP: la única puerta de entrada desde fuera es el Ingress
+  # (50-ingress.yaml). Exponer Kong con LoadBalancer daría un segundo camino
+  # hacia los microservicios saltándose el TLS del Ingress.
+  type: ClusterIP
+  selector:
+    app: kong
+  ports:
+    - name: proxy
+      port: 8000
+      targetPort: 8000
+    - name: admin
+      port: 8001
+      targetPort: 8001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: parqueadero
+  labels:
+    app: kong
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kong
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: kong
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: kong
+          image: ghcr.io/mishellcuasquer/parking-piii/kong:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: proxy
+              containerPort: 8000
+            - name: admin
+              containerPort: 8001
+          env:
+            # CoreDNS responde SERVFAIL a las consultas SRV; sin esto Kong
+            # reintenta ~4s por request y el stream SSE muere por timeout.
+            - name: KONG_DNS_ORDER
+              value: "LAST,A,CNAME"
+            - name: KONG_DNS_VALID_TTL
+              value: "60"
+            - name: KONG_NGINX_WORKER_PROCESSES
+              value: "2"
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

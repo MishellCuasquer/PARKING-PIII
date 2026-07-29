@@ -1,0 +1,12 @@
+# Namespace único para toda la plataforma SaaS multitenant.
+# El aislamiento entre empresas (tenants) es lógico (columna tenant_id + claim
+# del JWT), NO por namespace: un namespace por tenant obligaría a redesplegar la
+# aplicación cada vez que entra una empresa nueva, lo contrario de lo que exige
+# el requisito de escalabilidad del modelo SaaS.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: parqueadero
+  labels:
+    name: parqueadero
+    app.kubernetes.io/part-of: parqueadero-saas

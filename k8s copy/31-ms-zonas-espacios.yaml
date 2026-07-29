@@ -1,0 +1,104 @@
+# MS-Zonas y Espacios (Spring Boot + MySQL).
+# Además del CRUD, es el emisor del stream SSE /api/espacios/stream.
+apiVersion: v1
+kind: Service
+metadata:
+  name: zonas-espacios
+  namespace: parqueadero
+  labels:
+    app: zonas-espacios
+spec:
+  type: ClusterIP
+  selector:
+    app: zonas-espacios
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zonas-espacios
+  namespace: parqueadero
+  labels:
+    app: zonas-espacios
+    app.kubernetes.io/part-of: parqueadero-saas
+spec:
+  # ATENCIÓN: 1 sola réplica a propósito.
+  # Los emisores SSE viven en memoria del pod (sse/EspacioEventos.java). Con
+  # varias réplicas, un cliente conectado al pod A no recibiría los cambios que
+  # procesa el pod B. Escalar esto exige antes mover el fan-out a Redis pub/sub
+  # o a una cola de RabbitMQ por instancia (ver k8s/README.md).
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zonas-espacios
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: zonas-espacios
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: zonas-espacios
+          image: ghcr.io/mishellcuasquer/parking-piii/ms-zonas-espacios:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:mysql://mysql-zonas:3306/zonas_espacios?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: MYSQL_USER }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: MYSQL_PASSWORD }
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: JWT_SECRET }
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: RABBITMQ_USER }
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: parqueadero-secrets, key: RABBITMQ_PASSWORD }
+          envFrom:
+            - configMapRef:
+                name: parqueadero-config
+          # Mismo caso que ms-usuarios: Spring Boot tarda >100s en este host solo
+          # en levantar el contexto. El startupProbe cubre el arranque lento y
+          # bloquea liveness/readiness hasta que el puerto responde.
+          startupProbe:
+            tcpSocket:
+              port: 8081
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: 8081
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8081
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

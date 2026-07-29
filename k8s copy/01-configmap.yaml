@@ -1,0 +1,43 @@
+# Variables de entorno NO sensibles compartidas por los microservicios.
+# Todo lo que sea credencial vive en 02-secrets.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: parqueadero-config
+  namespace: parqueadero
+  labels:
+    app.kubernetes.io/part-of: parqueadero-saas
+data:
+  # --- Infraestructura (nombres de Service dentro del namespace) ---
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  MYSQL_HOST: "mysql-zonas"
+  MYSQL_PORT: "3306"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+
+  # --- Topología de RabbitMQ para la auditoría ---
+  RABBITMQ_EXCHANGE: "exchange_audit"
+  RABBITMQ_ROUTING_KEY: "routing_audit"
+  RABBITMQ_QUEUE: "queue_audit"
+
+  # --- URLs internas entre microservicios (service discovery de K8s) ---
+  AUTH_TOKEN_URL: "http://usuarios:8080/api/oauth/token"
+  MS_PERSONA: "http://usuarios:8080/api/personas"
+  MS_ZONAS: "http://zonas-espacios:8081/api/zonas"
+  MS_ESPACIOS: "http://zonas-espacios:8081/api/espacios"
+  MS_VEHICULOS: "http://vehiculos:3000/vehiculos"
+
+  # --- JWT (el secreto va en el Secret; aquí solo lo público) ---
+  JWT_ISSUER: "https://parqueadero.espe.edu.ec"
+  JWT_EXPIRATION: "86400000"
+
+  # --- Perfil de Spring / Hibernate ---
+  JPA_DDL_AUTO: "update"
+  JPA_SHOW_SQL: "false"
+  JPA_FORMAT_SQL: "false"
+
+  # --- Tarifa por defecto: solo se usa cuando el tenant no define la suya ---
+  TARIFA_HORA: "1.0"
