@@ -85,16 +85,22 @@ spec:
             - name: init
               mountPath: /docker-entrypoint-initdb.d
               readOnly: true
+          # timeoutSeconds explícito: igual que en rabbitmq (ver 13-rabbitmq.yaml),
+          # el default de 1s hace que pg_isready venza por simple contención de
+          # CPU del nodo, no porque Postgres esté caído, y el kubelet lo mata.
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
             initialDelaySeconds: 30
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m

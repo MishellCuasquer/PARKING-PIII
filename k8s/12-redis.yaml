@@ -57,16 +57,22 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+          # timeoutSeconds explícito: igual que en rabbitmq (ver 13-rabbitmq.yaml),
+          # el default de 1s hace que redis-cli venza por simple contención de
+          # CPU del nodo, no porque Redis esté caído, y el kubelet lo mata.
           readinessProbe:
             exec:
               command: ["redis-cli", "ping"]
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             exec:
               command: ["redis-cli", "ping"]
             initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m

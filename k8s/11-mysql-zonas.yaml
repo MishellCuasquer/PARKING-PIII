@@ -57,17 +57,23 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/mysql
+          # timeoutSeconds explícito: igual que en rabbitmq (ver 13-rabbitmq.yaml),
+          # el default de 1s hace que mysqladmin venza por simple contención de
+          # CPU del nodo, no porque MySQL esté caído, y el kubelet lo mata.
           readinessProbe:
             exec:
               command: ["sh", "-c", "mysqladmin ping -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
             initialDelaySeconds: 20
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 10
           livenessProbe:
             exec:
               command: ["sh", "-c", "mysqladmin ping -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
             initialDelaySeconds: 60
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m
