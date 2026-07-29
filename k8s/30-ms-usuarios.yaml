@@ -25,7 +25,11 @@ metadata:
     app: usuarios
     app.kubernetes.io/part-of: parqueadero-saas
 spec:
-  replicas: 2
+  # 1 réplica en el clúster de demo: el nodo de minikube solo tiene ~3 GiB
+  # reales y con 2 réplicas (512Mi de request cada una) el scheduler admitía
+  # más memoria de la que cabe, el cgroup mataba procesos (exit 137) y el nodo
+  # entraba en NodeNotReady arrastrando a etcd y al apiserver.
+  replicas: 1
   selector:
     matchLabels:
       app: usuarios
@@ -76,17 +80,28 @@ spec:
           # Sondas TCP: los servicios no exponen /actuator/health y cualquier
           # ruta HTTP real devolvería 401 (todo pasa por el filtro JWT), lo que
           # dejaría al pod eternamente "not ready".
+          # Spring Boot en este host puede tardar >100s solo en levantar el
+          # contexto (ver logs: "Root WebApplicationContext: initialization
+          # completed in 81741 ms"). El startupProbe es la forma correcta de
+          # cubrirlo: mientras no pase, el kubelet NO ejecuta liveness ni
+          # readiness, así que un arranque lento ya no puede matar al pod.
+          # Presupuesto: 30 x 10s = 300s.
+          startupProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 30
           readinessProbe:
             tcpSocket:
               port: 8080
-            initialDelaySeconds: 30
             periodSeconds: 10
-            failureThreshold: 12
+            failureThreshold: 3
+          # Sin initialDelay: el startupProbe ya garantizó que arrancó.
           livenessProbe:
             tcpSocket:
               port: 8080
-            initialDelaySeconds: 90
             periodSeconds: 20
+            failureThreshold: 3
           resources:
             requests:
               cpu: 200m

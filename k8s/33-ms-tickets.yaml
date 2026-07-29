@@ -26,7 +26,9 @@ metadata:
     app: tickets
     app.kubernetes.io/part-of: parqueadero-saas
 spec:
-  replicas: 2
+  # 1 réplica en el clúster de demo por la RAM real del nodo de minikube
+  # (~3 GiB). Ver la nota en 30-ms-usuarios.yaml.
+  replicas: 1
   selector:
     matchLabels:
       app: tickets
@@ -84,17 +86,24 @@ spec:
           envFrom:
             - configMapRef:
                 name: parqueadero-config
+          # Mismo caso que ms-vehiculos: la liveness mataba el pod antes de que
+          # Nest arrancara. Aquí importa más, porque tickets espera a que
+          # respondan vehículos, zonas y personas durante su arranque.
+          startupProbe:
+            tcpSocket:
+              port: 3002
+            periodSeconds: 10
+            failureThreshold: 24
           readinessProbe:
             tcpSocket:
               port: 3002
-            initialDelaySeconds: 15
             periodSeconds: 10
-            failureThreshold: 12
+            failureThreshold: 3
           livenessProbe:
             tcpSocket:
               port: 3002
-            initialDelaySeconds: 45
             periodSeconds: 20
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m

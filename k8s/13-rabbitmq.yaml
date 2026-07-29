@@ -78,25 +78,33 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
-          # OJO con timeoutSeconds: `rabbitmq-diagnostics ping` arranca una VM de
-          # Erlang para consultar al nodo y tarda varios segundos. Con el valor
-          # por defecto (1s) la sonda vence siempre, el kubelet mata el
-          # contenedor y RabbitMQ se queda en un bucle de reinicios sin llegar
-          # nunca a Ready.
+          # OJO con `rabbitmq-diagnostics ping`: arranca una VM de Erlang entera
+          # en CADA ejecución, tarda varios segundos y consume CPU. Usarlo como
+          # liveness cada 30s en un nodo cargado hacía que venciera incluso con
+          # timeoutSeconds: 10, el kubelet mataba el broker y volvía al bucle de
+          # reinicios (23 en 18h) aunque los logs mostraban un arranque correcto.
+          #
+          # Liveness = tcpSocket: "¿el proceso sigue vivo?" no necesita Erlang.
+          # Es instantáneo y no puede vencer por CPU.
+          startupProbe:
+            tcpSocket:
+              port: 5672
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket:
+              port: 5672
+            periodSeconds: 30
+            failureThreshold: 3
+          # Readiness sí conserva el ping real (comprueba que el broker responde,
+          # no solo que el puerto está abierto), pero espaciado y con margen
+          # amplio para que su propio coste no tumbe al nodo.
           readinessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "-q", "ping"]
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            timeoutSeconds: 10
-            failureThreshold: 12
-          livenessProbe:
-            exec:
-              command: ["rabbitmq-diagnostics", "-q", "ping"]
-            initialDelaySeconds: 90
             periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 6
+            timeoutSeconds: 25
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m

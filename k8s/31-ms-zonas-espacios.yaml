@@ -73,17 +73,24 @@ spec:
           envFrom:
             - configMapRef:
                 name: parqueadero-config
+          # Mismo caso que ms-usuarios: Spring Boot tarda >100s en este host solo
+          # en levantar el contexto. El startupProbe cubre el arranque lento y
+          # bloquea liveness/readiness hasta que el puerto responde.
+          startupProbe:
+            tcpSocket:
+              port: 8081
+            periodSeconds: 10
+            failureThreshold: 30
           readinessProbe:
             tcpSocket:
               port: 8081
-            initialDelaySeconds: 30
             periodSeconds: 10
-            failureThreshold: 12
+            failureThreshold: 3
           livenessProbe:
             tcpSocket:
               port: 8081
-            initialDelaySeconds: 90
             periodSeconds: 20
+            failureThreshold: 3
           resources:
             requests:
               cpu: 200m

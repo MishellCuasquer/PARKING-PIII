@@ -24,7 +24,9 @@ metadata:
     app: vehiculos
     app.kubernetes.io/part-of: parqueadero-saas
 spec:
-  replicas: 2
+  # 1 réplica en el clúster de demo por la RAM real del nodo de minikube
+  # (~3 GiB). Ver la nota en 30-ms-usuarios.yaml.
+  replicas: 1
   selector:
     matchLabels:
       app: vehiculos
@@ -76,17 +78,25 @@ spec:
           envFrom:
             - configMapRef:
                 name: parqueadero-config
+          # Con initialDelay 45s + 3 fallos de 20s el kubelet mataba el pod
+          # (SIGTERM) antes de que Nest terminara de arrancar en un nodo
+          # saturado, dando un CrashLoopBackOff que parecía un error de la app.
+          # El startupProbe bloquea liveness/readiness hasta que el puerto abre.
+          startupProbe:
+            tcpSocket:
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 24
           readinessProbe:
             tcpSocket:
               port: 3000
-            initialDelaySeconds: 15
             periodSeconds: 10
-            failureThreshold: 12
+            failureThreshold: 3
           livenessProbe:
             tcpSocket:
               port: 3000
-            initialDelaySeconds: 45
             periodSeconds: 20
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
